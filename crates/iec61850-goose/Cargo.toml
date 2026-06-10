@@ -1,0 +1,39 @@
+[package]
+name = "iec61850-goose"
+description = "GOOSE (IEC 61850-8-1): publicador y suscriptor de eventos en capa 2 Ethernet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+features = ["net"]
+
+[features]
+default = []
+# Publicador/suscriptor + socket de capa 2 (vía iec61850-l2). El codec
+# (frame/pdu) compila y se testea SIN esta feature.
+net = ["iec61850-l2/net", "dep:tokio"]
+
+[dependencies]
+iec61850-ber = { workspace = true }
+iec61850-l2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["net", "io-util", "rt", "macros", "sync", "time"], optional = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+
+[[example]]
+name = "goose_publish"
+required-features = ["net"]
+
+[[example]]
+name = "goose_monitor"
+required-features = ["net"]

@@ -1,0 +1,27 @@
+[package]
+name = "iec61850-scl"
+description = "Parser de SCL (IEC 61850-6) y resolución a modelo de datos IEC 61850."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+# Propaga serde al modelo para poder serializar el árbol resuelto.
+serde = ["iec61850-model/serde"]
+
+[dependencies]
+iec61850-model = { workspace = true }
+quick-xml = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+pretty_assertions = { workspace = true }

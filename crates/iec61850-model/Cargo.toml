@@ -1,0 +1,23 @@
+[package]
+name = "iec61850-model"
+description = "Modelo de datos IEC 61850 (Server/LD/LN/DO/DA) y referencias de objeto."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

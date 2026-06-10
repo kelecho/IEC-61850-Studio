@@ -1,0 +1,54 @@
+[package]
+name = "iec61850"
+description = "Librería IEC 61850 en Rust: modelo de datos y SCL (fachada con feature flags)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["scl"]
+# Modelo de datos (siempre disponible vía re-export).
+model = []
+# Parser SCL.
+scl = ["dep:iec61850-scl"]
+# Cliente MMS (asíncrono, tokio).
+mms = ["dep:iec61850-mms", "iec61850-mms/client"]
+# Servidor MMS / IED simulado.
+mms-server = ["dep:iec61850-mms", "iec61850-mms/server"]
+# TLS de transporte (mTLS, IEC 62351-3) para cliente/servidor MMS.
+mms-tls = ["dep:iec61850-mms", "iec61850-mms/tls"]
+# GOOSE (codec; añade publicador/suscriptor con la feature net del crate).
+goose = ["dep:iec61850-goose"]
+goose-net = ["goose", "iec61850-goose/net"]
+# Sampled Values (codec; añade publicador/suscriptor con net).
+sv = ["dep:iec61850-sv"]
+sv-net = ["sv", "iec61850-sv/net"]
+# Integración SCL → config de GOOSE/SV.
+config = ["scl", "goose", "sv", "dep:thiserror"]
+# Serialización del modelo/árbol resuelto.
+serde = ["iec61850-model/serde", "iec61850-scl?/serde"]
+
+[dependencies]
+iec61850-model = { workspace = true }
+iec61850-scl = { workspace = true, optional = true }
+iec61850-mms = { workspace = true, optional = true }
+iec61850-goose = { workspace = true, optional = true }
+iec61850-sv = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+[[example]]
+name = "scl_dump"
+required-features = ["scl"]

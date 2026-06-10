@@ -1,0 +1,8 @@
+/* El layout y el tema los aporta Mantine (AppShell, componentes). Aquí solo un
+   reset mínimo para que la ventana ocupe todo el alto. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

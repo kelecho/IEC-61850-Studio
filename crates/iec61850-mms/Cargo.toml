@@ -1,0 +1,51 @@
+[package]
+name = "iec61850-mms"
+description = "MMS (IEC 61850-8-1 / ISO 9506): cliente y servidor con codec BER propio. Asíncrono (tokio)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+features = ["client", "server", "tls"]
+
+[features]
+default = []
+# El cliente async (I/O sobre tokio). El codec BER y el ensamblado de PDUs
+# compilan y se testean SIN esta feature.
+client = ["dep:tokio"]
+# El servidor / IED simulado (I/O sobre tokio).
+server = ["dep:tokio"]
+# TLS de transporte (IEC 62351-3) con rustls. Opcional: sin esta feature no se
+# añade ninguna dependencia nueva ni cambia el comportamiento en claro.
+tls = ["dep:tokio-rustls"]
+
+[dependencies]
+iec61850-ber = { workspace = true }
+iec61850-model = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["net", "io-util", "macros", "rt", "sync", "time"], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"], optional = true }
+
+[dev-dependencies]
+iec61850-scl = { workspace = true }
+pretty_assertions = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+rcgen = "0.13"
+
+[[test]]
+name = "tls_loopback"
+required-features = ["client", "server", "tls"]
+
+[[example]]
+name = "mms_explore"
+required-features = ["client"]
+
+[[example]]
+name = "ied_sim"
+required-features = ["server"]

@@ -1,0 +1,31 @@
+[package]
+name = "iec61850-l2"
+description = "Capa 2 común de IEC 61850: cabecera Ethernet/802.1Q/APPID y socket AF_PACKET, compartidos por GOOSE y SV."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+# Enlace de capa 2 (socket AF_PACKET vía libc) + async (tokio). La cabecera
+# (eth.rs) compila y se testea sin esta feature.
+net = ["dep:libc", "dep:tokio"]
+
+[dependencies]
+thiserror = { workspace = true }
+libc = { version = "0.2", optional = true }
+tokio = { version = "1", features = ["net", "io-util", "rt", "macros", "sync", "time"], optional = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+
+[[example]]
+name = "pcap_capture"
+required-features = ["net"]

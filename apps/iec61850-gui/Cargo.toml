@@ -1,0 +1,18 @@
+[package]
+name = "iec61850-gui"
+description = "App de escritorio (egui) de demo: cliente MMS para leer y monitorear reportes de un IED."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+iec61850 = { path = "../../crates/iec61850", features = ["mms"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+eframe = { version = "0.31", default-features = false, features = [
+    "glow",
+    "default_fonts",
+    "x11",
+    "wayland",
+] }

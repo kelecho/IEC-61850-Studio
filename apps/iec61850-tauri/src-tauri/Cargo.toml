@@ -1,0 +1,32 @@
+[package]
+name = "iec61850-tauri"
+description = "App Tauri (UI web) de demo: cliente MMS sobre la librería iec61850."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "iec61850_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+# `mms` = cliente; `mms-server` + `scl` = simulador IED embebido; `mms-tls` = TLS/mTLS (IEC 62351-3);
+# `goose-net`/`sv-net` = monitores de capa 2 (requieren CAP_NET_RAW/root al ejecutar).
+iec61850 = { path = "../../../crates/iec61850", features = [
+    "mms",
+    "mms-server",
+    "mms-tls",
+    "scl",
+    "goose-net",
+    "sv-net",
+] }

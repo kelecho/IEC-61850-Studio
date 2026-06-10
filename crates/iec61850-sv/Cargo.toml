@@ -1,0 +1,39 @@
+[package]
+name = "iec61850-sv"
+description = "Sampled Values (IEC 61850-9-2): publicador y suscriptor de muestras en capa 2 Ethernet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+features = ["net"]
+
+[features]
+default = []
+# Publicador/suscriptor + socket de capa 2 (vía iec61850-l2). El codec
+# (frame/pdu/nine_two_le) compila y se testea SIN esta feature.
+net = ["iec61850-l2/net", "dep:tokio"]
+
+[dependencies]
+iec61850-ber = { workspace = true }
+iec61850-l2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["net", "io-util", "rt", "macros", "sync", "time"], optional = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+
+[[example]]
+name = "sv_publish"
+required-features = ["net"]
+
+[[example]]
+name = "sv_monitor"
+required-features = ["net"]

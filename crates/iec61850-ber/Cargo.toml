@@ -1,0 +1,18 @@
+[package]
+name = "iec61850-ber"
+description = "Codec BER (ASN.1) propio y el tipo Data de MMS, compartido por las capas MMS y GOOSE."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
