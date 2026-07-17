@@ -273,6 +273,16 @@ mod tests {
             basic_type: BasicType::Enum,
             desc: None,
             enum_type: Some("Beh".into()),
+            enum_values: vec![
+                crate::EnumValue {
+                    ord: 1,
+                    literal: "on".into(),
+                },
+                crate::EnumValue {
+                    ord: 2,
+                    literal: "off".into(),
+                },
+            ],
             trigger_options: TriggerOptions {
                 dchg: true,
                 ..Default::default()
@@ -297,6 +307,8 @@ mod tests {
             data_objects: vec![mod_do],
             data_sets: vec![],
             report_controls: vec![],
+            setting_group_control: None,
+            log_controls: vec![],
         };
         let ld = LogicalDevice {
             inst: "LD0".into(),

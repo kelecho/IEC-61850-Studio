@@ -37,7 +37,7 @@ pub use model::{DatasetMember, Model, NodeRef};
 pub use quality::{Quality, Source, TimeQuality, Timestamp, Validity};
 pub use reference::{ObjectReference, ParseReferenceError};
 pub use tree::{
-    DataAttribute, DataObject, DataSet, Fcda, LogicalDevice, LogicalNode, ReportControl, Server,
-    TriggerOptions,
+    DataAttribute, DataObject, DataSet, EnumValue, Fcda, LogControlBlock, LogicalDevice,
+    LogicalNode, ReportControl, Server, SettingGroupControl, TriggerOptions,
 };
 pub use value::Value;

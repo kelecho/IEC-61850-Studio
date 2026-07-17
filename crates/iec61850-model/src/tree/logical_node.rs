@@ -4,7 +4,7 @@
 //! (p. ej. prefijo `""`, clase `MMXU`, instancia `1` → `MMXU1`). `LLN0` es el
 //! nodo lógico cero del dispositivo.
 
-use crate::tree::control::{DataSet, ReportControl};
+use crate::tree::control::{DataSet, LogControlBlock, ReportControl, SettingGroupControl};
 use crate::tree::data_object::DataObject;
 
 /// Nodo lógico instanciado.
@@ -26,6 +26,10 @@ pub struct LogicalNode {
     pub data_sets: Vec<DataSet>,
     /// Bloques de control de reporte (típicamente en `LLN0`).
     pub report_controls: Vec<ReportControl>,
+    /// Bloque de control de grupos de ajustes (SGCB), si el LN lo declara.
+    pub setting_group_control: Option<SettingGroupControl>,
+    /// Bloques de control de log (LCB) declarados en el LN.
+    pub log_controls: Vec<LogControlBlock>,
 }
 
 impl LogicalNode {
