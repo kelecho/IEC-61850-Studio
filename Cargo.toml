@@ -9,9 +9,8 @@ default-members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-# TODO: actualizar al crear el repositorio (ver RELEASING.md).
-repository = "https://github.com/USUARIO/iec61850"
-homepage = "https://github.com/USUARIO/iec61850"
+repository = "https://github.com/kelecho/IEC-61850-Studio"
+homepage = "https://github.com/kelecho/IEC-61850-Studio"
 readme = "README.md"
 keywords = ["iec61850", "scada", "substation", "mms", "goose"]
 categories = ["network-programming", "embedded"]
