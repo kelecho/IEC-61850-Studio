@@ -26,12 +26,19 @@ mms = ["dep:iec61850-mms", "iec61850-mms/client"]
 mms-server = ["dep:iec61850-mms", "iec61850-mms/server"]
 # TLS de transporte (mTLS, IEC 62351-3) para cliente/servidor MMS.
 mms-tls = ["dep:iec61850-mms", "iec61850-mms/tls"]
+# Access tokens firmados para RBAC (IEC 62351-8). Implica el servidor MMS (el
+# token asigna el rol en la asociación).
+mms-tokens = ["mms-server", "iec61850-mms/tokens"]
 # GOOSE (codec; añade publicador/suscriptor con la feature net del crate).
 goose = ["dep:iec61850-goose"]
 goose-net = ["goose", "iec61850-goose/net"]
 # Sampled Values (codec; añade publicador/suscriptor con net).
 sv = ["dep:iec61850-sv"]
 sv-net = ["sv", "iec61850-sv/net"]
+# Firma asimétrica ECDSA P-256 (IEC 62351-6:2020) para GOOSE/SV. Trae el crate
+# auditado p256; el HMAC-SHA256 (simétrico, propio) no la necesita.
+goose-ecdsa = ["goose", "iec61850-goose/ecdsa"]
+sv-ecdsa = ["sv", "iec61850-sv/ecdsa"]
 # Integración SCL → config de GOOSE/SV.
 config = ["scl", "goose", "sv", "dep:thiserror"]
 # Serialización del modelo/árbol resuelto.
@@ -52,3 +59,6 @@ clap = { workspace = true }
 [[example]]
 name = "scl_dump"
 required-features = ["scl"]
+
+[lints]
+workspace = true

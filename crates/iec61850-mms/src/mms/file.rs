@@ -1,5 +1,5 @@
 //! Servicios MMS de **transferencia de ficheros** (ISO 9506-2): `fileDirectory`
-//! [77], `fileOpen` [72], `fileRead` [73] y `fileClose` [74].
+//! \[77\], `fileOpen` \[72\], `fileRead` \[73\] y `fileClose` \[74\].
 //!
 //! Permiten **listar y descargar ficheros del IED** — registros de perturbación
 //! (disturbance records), oscilografías COMTRADE, logs — una función de
@@ -96,14 +96,10 @@ pub fn write_directory_request(
 pub fn decode_directory_response(service_tlv: &Tlv<'_>) -> Result<FileDirectory, MmsError> {
     let content = pdu::expect_service(service_tlv, service::FILE_DIRECTORY)?;
     let mut r = BerReader::new(content);
-    // listOfDirectoryEntry [0] IMPLICIT SEQUENCE OF DirectoryEntry
+    // listOfDirectoryEntry [0] SEQUENCE OF DirectoryEntry.
     let list = r.expect(Tag::context(0, true))?;
-    let mut lr = BerReader::new(list);
     let mut entries = Vec::new();
-    while !lr.is_empty() {
-        let entry = lr.read_tlv()?; // DirectoryEntry ::= SEQUENCE
-        entries.push(decode_directory_entry(entry.content)?);
-    }
+    collect_directory_entries(list, &mut entries, 0)?;
     // moreFollows [1] IMPLICIT BOOLEAN DEFAULT FALSE
     let more_follows = match r.read_if(Tag::context(1, false))? {
         Some(c) => crate::ber::prim::decode_bool(c)?,
@@ -113,6 +109,37 @@ pub fn decode_directory_response(service_tlv: &Tlv<'_>) -> Result<FileDirectory,
         entries,
         more_follows,
     })
+}
+
+/// Recoge las `DirectoryEntry` de la lista, tolerando el nivel de anidamiento que
+/// añaden algunas implementaciones. Interop: libiec61850 envuelve las entradas en
+/// un `SEQUENCE OF` universal extra dentro de `listOfDirectoryEntry [0]`
+/// (`[0] { 30 { 30 entry, ... } }`), mientras otras las ponen directamente
+/// (`[0] { 30 entry, ... }`). Distinguimos por el primer sub-tag de cada
+/// `SEQUENCE`: `fileName [0]` ⇒ es un DirectoryEntry; otro `SEQUENCE` ⇒ es el
+/// envoltorio y descendemos.
+fn collect_directory_entries(
+    bytes: &[u8],
+    out: &mut Vec<FileEntry>,
+    depth: usize,
+) -> Result<(), MmsError> {
+    if depth > 2 {
+        return Ok(()); // cota de seguridad frente a anidamiento anómalo
+    }
+    let mut r = BerReader::new(bytes);
+    while !r.is_empty() {
+        let tlv = r.read_tlv()?; // SEQUENCE
+        let inner = BerReader::new(tlv.content);
+        match inner.peek_tag() {
+            // Empieza por fileName [0] → es un DirectoryEntry.
+            Ok(t) if t == Tag::context(0, true) => {
+                out.push(decode_directory_entry(tlv.content)?);
+            }
+            // Empieza por otro SEQUENCE → es el envoltorio SEQUENCE OF: descender.
+            _ => collect_directory_entries(tlv.content, out, depth + 1)?,
+        }
+    }
+    Ok(())
 }
 
 fn decode_directory_entry(content: &[u8]) -> Result<FileEntry, MmsError> {
@@ -176,7 +203,8 @@ pub fn write_read_request(w: &mut BerWriter, frsm_id: i32) {
 
 /// Decodifica la respuesta `fileRead`.
 pub fn decode_read_response(service_tlv: &Tlv<'_>) -> Result<FileChunk, MmsError> {
-    let content = pdu::expect_service(service_tlv, service::FILE_READ)?;
+    // La respuesta es constructed (SEQUENCE), distinta del tag primitivo del request.
+    let content = pdu::expect_service(service_tlv, service::FILE_READ_RESPONSE)?;
     let mut r = BerReader::new(content);
     // fileData [0] IMPLICIT OCTET STRING
     let data = r.expect(Tag::context(0, false))?.to_vec();
@@ -274,7 +302,7 @@ pub fn encode_open_response(w: &mut BerWriter, open: &FileOpen) {
 
 /// Codifica la respuesta `fileRead`.
 pub fn encode_read_response(w: &mut BerWriter, chunk: &FileChunk) {
-    w.tlv(service::FILE_READ, |w| {
+    w.tlv(service::FILE_READ_RESPONSE, |w| {
         w.octet_string(Tag::context(0, false), &chunk.data);
         // moreFollows DEFAULT TRUE: lo emitimos solo cuando es false.
         if !chunk.more_follows {
@@ -424,6 +452,35 @@ mod tests {
     }
 
     #[test]
+    fn directory_response_with_sequence_of_wrapper() {
+        // Guardián de interop: libiec61850 envuelve las entradas en un SEQUENCE OF
+        // universal extra dentro de listOfDirectoryEntry [0]:
+        //   [0] { 30 SEQUENCE_OF { 30 entry, 30 entry } }
+        // El decoder debe tolerarlo igual que la forma directa.
+        let bytes = service_tlv(|w| {
+            w.tlv(service::FILE_DIRECTORY, |w| {
+                w.tlv(Tag::context(0, true), |w| {
+                    // wrapper SEQUENCE OF adicional
+                    w.sequence(|w| {
+                        w.sequence(|w| {
+                            w.tlv(Tag::context(0, true), |w| write_file_name(w, "test"));
+                            w.tlv(Tag::context(1, true), |w| {
+                                w.unsigned(Tag::context(0, false), 5);
+                            });
+                        });
+                    });
+                });
+            });
+        });
+        let mut r = BerReader::new(&bytes);
+        let svc = r.read_tlv().unwrap();
+        let dir = decode_directory_response(&svc).unwrap();
+        assert_eq!(dir.entries.len(), 1);
+        assert_eq!(dir.entries[0].name, "test");
+        assert_eq!(dir.entries[0].size, 5);
+    }
+
+    #[test]
     fn open_round_trip() {
         let bytes = service_tlv(|w| {
             w.tlv(service::FILE_OPEN, |w| {
@@ -451,24 +508,39 @@ mod tests {
 
     #[test]
     fn read_response_data_and_more() {
-        // con moreFollows explícito false
+        // La respuesta de fileRead usa el tag CONSTRUCTED (73, true), distinto
+        // del primitivo del request. Guardián del bug de interop: libiec61850 y
+        // todo stack conforme la envían constructed; con (73,false) fallaba.
         let bytes = service_tlv(|w| {
-            w.tlv(service::FILE_READ, |w| {
-                w.octet_string(Tag::context(0, false), &[1, 2, 3, 4]);
-                w.boolean(Tag::context(1, false), false);
-            });
+            encode_read_response(
+                w,
+                &FileChunk {
+                    data: vec![1, 2, 3, 4],
+                    more_follows: false,
+                },
+            )
         });
+        // El primer byte del cuerpo del servicio es el tag constructed 0xbf 0x49.
         let mut r = BerReader::new(&bytes);
         let svc = r.read_tlv().unwrap();
+        assert_eq!(svc.tag, service::FILE_READ_RESPONSE);
+        assert!(
+            svc.tag.constructed,
+            "fileRead-Response debe ser constructed"
+        );
         let chunk = decode_read_response(&svc).unwrap();
         assert_eq!(chunk.data, vec![1, 2, 3, 4]);
         assert!(!chunk.more_follows);
 
         // sin moreFollows → DEFAULT TRUE
         let bytes = service_tlv(|w| {
-            w.tlv(service::FILE_READ, |w| {
-                w.octet_string(Tag::context(0, false), &[9]);
-            });
+            encode_read_response(
+                w,
+                &FileChunk {
+                    data: vec![9],
+                    more_follows: true,
+                },
+            )
         });
         let mut r = BerReader::new(&bytes);
         let svc = r.read_tlv().unwrap();

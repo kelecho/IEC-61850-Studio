@@ -104,6 +104,12 @@ pub fn encode_information_report(data: &ReportData<'_>) -> Vec<u8> {
     let mut w = BerWriter::new();
     w.tlv(UNCONFIRMED, |w| {
         w.tlv(INFORMATION_REPORT, |w| {
+            // variableAccessSpecification: variableListName [1] → vmd-specific [0]
+            // "RPT". Obligatorio: un cliente conforme (libiec61850) descarta el
+            // reporte si no viene esta cabecera antes del listOfAccessResult.
+            w.tlv(Tag::context(1, true), |w| {
+                w.visible_string(Tag::context(0, false), "RPT");
+            });
             // listOfAccessResult [0] SEQUENCE OF AccessResult (Data success)
             w.tlv(Tag::context(0, true), |w| {
                 MmsData::Visible(data.rpt_id.to_string()).encode(w);

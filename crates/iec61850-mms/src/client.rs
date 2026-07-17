@@ -25,6 +25,8 @@ use crate::mms::file::{self, FileChunk, FileDirectory, FileOpen};
 use crate::mms::get_name_list::{self, ObjectClass, ObjectScope};
 use crate::mms::identify::{self, IdentifyResponse};
 use crate::mms::initiate::{InitiateRequest, InitiateResponse};
+use crate::mms::journal;
+use crate::mms::named_var_list;
 use crate::mms::pdu::{self, PduKind};
 use crate::mms::read::{self, AccessResult};
 use crate::mms::report::{self, CommandTermination, Report, ReportConfig};
@@ -84,7 +86,31 @@ impl MmsClient {
     /// Conecta, establece COTP y negocia la asociación; luego separa el socket y
     /// lanza la tarea lectora de fondo.
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<MmsClient, MmsError> {
-        Self::handshake(IsoConnection::connect(addr).await?).await
+        Self::handshake(IsoConnection::connect(addr).await?, None).await
+    }
+
+    /// Conecta autenticándose con un **password** (IEC 62351-4): el password
+    /// viaja en el AARQ de la asociación. Recomendado solo sobre TLS.
+    pub async fn connect_with_password<A: ToSocketAddrs>(
+        addr: A,
+        password: &str,
+    ) -> Result<MmsClient, MmsError> {
+        Self::handshake(
+            IsoConnection::connect(addr).await?,
+            Some(password.as_bytes()),
+        )
+        .await
+    }
+
+    /// Conecta presentando un **access token firmado** (RBAC, IEC 62351-8): el
+    /// token (emitido por una autoridad y verificable por el servidor) viaja en el
+    /// `authentication-value` del AARQ. El servidor extrae el rol del token, sin
+    /// necesitar un mapeo estático de credenciales. Recomendado sobre TLS.
+    pub async fn connect_with_token<A: ToSocketAddrs>(
+        addr: A,
+        token: &[u8],
+    ) -> Result<MmsClient, MmsError> {
+        Self::handshake(IsoConnection::connect(addr).await?, Some(token)).await
     }
 
     /// Conecta sobre **TLS** (mTLS, IEC 62351-3) y asocia. `server_name` es el
@@ -95,12 +121,34 @@ impl MmsClient {
         server_name: &str,
         connector: tokio_rustls::TlsConnector,
     ) -> Result<MmsClient, MmsError> {
-        Self::handshake(IsoConnection::connect_tls(addr, server_name, &connector).await?).await
+        Self::handshake(
+            IsoConnection::connect_tls(addr, server_name, &connector).await?,
+            None,
+        )
+        .await
+    }
+
+    /// Conecta sobre TLS y además autentica con **password** (62351-3 + 62351-4).
+    #[cfg(feature = "tls")]
+    pub async fn connect_tls_with_password<A: ToSocketAddrs>(
+        addr: A,
+        server_name: &str,
+        connector: tokio_rustls::TlsConnector,
+        password: &str,
+    ) -> Result<MmsClient, MmsError> {
+        Self::handshake(
+            IsoConnection::connect_tls(addr, server_name, &connector).await?,
+            Some(password.as_bytes()),
+        )
+        .await
     }
 
     /// Negocia COTP + asociación MMS sobre una conexión ya abierta y lanza la
-    /// tarea lectora de fondo.
-    async fn handshake(mut conn: IsoConnection) -> Result<MmsClient, MmsError> {
+    /// tarea lectora de fondo. `password` añade autenticación ACSE (62351-4).
+    async fn handshake(
+        mut conn: IsoConnection,
+        auth_value: Option<&[u8]>,
+    ) -> Result<MmsClient, MmsError> {
         // COTP: CR → CC. El handshake va con timeout: un IED que no responde no
         // debe colgar `connect()` indefinidamente (antes `read_exact` bloqueaba
         // sin plazo).
@@ -110,7 +158,7 @@ impl MmsClient {
 
         // Asociación MMS.
         let initiate = InitiateRequest::default().encode();
-        let aarq = acse::aarq(&initiate);
+        let aarq = acse::aarq_auth(&initiate, auth_value);
         let cp = presentation::connect_cp(&aarq);
         conn.send(&cotp::data_tpdu(&session::connect(&cp))).await?;
         let resp = recv_data_with_timeout(&mut conn).await?;
@@ -244,6 +292,112 @@ impl MmsClient {
         read::decode_response(&cr.service)?
             .pop()
             .ok_or(MmsError::UnexpectedPdu)
+    }
+
+    /// Lee todos los valores de un dataset **por nombre** (`readDataSetValues`):
+    /// funciona con datasets estáticos (SCL) y dinámicos.
+    pub async fn read_data_set(&self, domain: &str, name: &str) -> Result<Vec<MmsData>, MmsError> {
+        let pdu = self
+            .request(|w| read::write_data_set_request(w, domain, name))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        read::decode_response(&cr.service)?
+            .into_iter()
+            .map(|r| r.into_data())
+            .collect()
+    }
+
+    // --- Logs (ReadJournal, ISO 9506) ---
+
+    /// Lee las entradas de un **log** (`ReadJournal`). `domain` es el LD e `item`
+    /// el nombre del journal (`"<LN>$<LogName>"`, p. ej. `"LLN0$EventLog"`).
+    /// Devuelve las entradas y si hay más por leer (`moreFollows`).
+    pub async fn read_journal(
+        &self,
+        domain: &str,
+        item: &str,
+    ) -> Result<(Vec<journal::JournalEntry>, bool), MmsError> {
+        let pdu = self
+            .request(|w| journal::write_request(w, domain, item))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        journal::decode_response(&cr.service)
+    }
+
+    // --- Grupos de ajustes (SGCB, IEC 61850-7-2) ---
+
+    /// Selecciona el **grupo de ajustes activo** (`SelectActiveSG`): escribe
+    /// `ActSG` del SGCB. `sgcb` es la referencia del bloque (`LD/LLN0.SGCB[SP]`).
+    pub async fn select_active_sg(
+        &self,
+        sgcb: &ObjectReference,
+        group: u32,
+    ) -> Result<(), MmsError> {
+        let mut obj = sgcb.clone();
+        obj.path.push("ActSG".to_string());
+        self.write(&obj, MmsData::Uint(group as u64)).await
+    }
+
+    /// Selecciona el grupo de ajustes en **edición** (`SelectEditSG`): escribe
+    /// `EditSG` del SGCB.
+    pub async fn select_edit_sg(&self, sgcb: &ObjectReference, group: u32) -> Result<(), MmsError> {
+        let mut obj = sgcb.clone();
+        obj.path.push("EditSG".to_string());
+        self.write(&obj, MmsData::Uint(group as u64)).await
+    }
+
+    /// Confirma los valores editados del grupo en edición (`ConfirmEditSGValues`):
+    /// escribe `CnfEdit = true` en el SGCB. Los valores escritos con FC=SE pasan a
+    /// formar parte del grupo seleccionado con `select_edit_sg`.
+    pub async fn confirm_edit_sg(&self, sgcb: &ObjectReference) -> Result<(), MmsError> {
+        let mut obj = sgcb.clone();
+        obj.path.push("CnfEdit".to_string());
+        self.write(&obj, MmsData::Bool(true)).await
+    }
+
+    // --- Datasets dinámicos (named variable lists, IEC 61850-8-1 Ed.2) ---
+
+    /// Crea un dataset dinámico (`DefineNamedVariableList`) en `domain` con el
+    /// nombre `name` y los `members` indicados como `(domainId, itemId)` MMS.
+    pub async fn create_data_set(
+        &self,
+        domain: &str,
+        name: &str,
+        members: &[(String, String)],
+    ) -> Result<(), MmsError> {
+        let pdu = self
+            .request(|w| named_var_list::write_define_request(w, domain, name, members))
+            .await?;
+        let _ = pdu::parse_confirmed_response(&pdu)?;
+        Ok(())
+    }
+
+    /// Borra un dataset dinámico (`DeleteNamedVariableList`). Devuelve cuántas
+    /// listas coincidieron y cuántas se borraron.
+    pub async fn delete_data_set(
+        &self,
+        domain: &str,
+        name: &str,
+    ) -> Result<named_var_list::DeleteResult, MmsError> {
+        let pdu = self
+            .request(|w| named_var_list::write_delete_request(w, domain, name))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        named_var_list::decode_delete_response(&cr.service)
+    }
+
+    /// Obtiene los atributos de un dataset (`GetNamedVariableListAttributes`):
+    /// si es borrable y sus miembros. Funciona con datasets estáticos y dinámicos.
+    pub async fn get_data_set_directory(
+        &self,
+        domain: &str,
+        name: &str,
+    ) -> Result<named_var_list::ListAttributes, MmsError> {
+        let pdu = self
+            .request(|w| named_var_list::write_get_attributes_request(w, domain, name))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        named_var_list::decode_get_attributes_response(&cr.service)
     }
 
     // --- Introspección de tipos (GetVariableAccessAttributes) ---

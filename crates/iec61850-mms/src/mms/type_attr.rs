@@ -123,8 +123,19 @@ pub fn decode_response(service_tlv: &Tlv<'_>) -> Result<VariableAttributes, MmsE
     })
 }
 
+/// Profundidad máxima de una `TypeSpecification` anidada (arrays/structures).
+/// Corta el desbordamiento de pila ante una respuesta hostil o corrupta.
+const MAX_TYPE_SPEC_DEPTH: usize = 16;
+
 /// Decodifica recursivamente una `TypeSpecification`.
 pub fn decode_type_spec(tlv: &Tlv<'_>) -> Result<TypeSpec, MmsError> {
+    decode_type_spec_at(tlv, 0)
+}
+
+fn decode_type_spec_at(tlv: &Tlv<'_>, depth: usize) -> Result<TypeSpec, MmsError> {
+    if depth >= MAX_TYPE_SPEC_DEPTH {
+        return Err(MmsError::Ber(crate::error::BerError::DepthExceeded));
+    }
     Ok(match tlv.tag {
         TS_BOOLEAN => TypeSpec::Boolean,
         TS_INTEGER => TypeSpec::Integer(small_u8(tlv.content)?),
@@ -139,8 +150,8 @@ pub fn decode_type_spec(tlv: &Tlv<'_>) -> Result<TypeSpec, MmsError> {
         TS_UTC_TIME => TypeSpec::UtcTime,
         TS_OBJ_ID => TypeSpec::ObjId,
         TS_FLOAT => decode_float_spec(tlv.content)?,
-        TS_ARRAY => decode_array_spec(tlv.content)?,
-        TS_STRUCTURE => TypeSpec::Structure(decode_structure(tlv.content)?),
+        TS_ARRAY => decode_array_spec(tlv.content, depth)?,
+        TS_STRUCTURE => TypeSpec::Structure(decode_structure(tlv.content, depth)?),
         TS_TYPE_NAME => {
             // name [0] ObjectName → mejor esfuerzo: último VisibleString.
             TypeSpec::TypeName(last_visible_string(tlv.content).unwrap_or_default())
@@ -160,7 +171,7 @@ fn decode_float_spec(content: &[u8]) -> Result<TypeSpec, MmsError> {
     })
 }
 
-fn decode_array_spec(content: &[u8]) -> Result<TypeSpec, MmsError> {
+fn decode_array_spec(content: &[u8], depth: usize) -> Result<TypeSpec, MmsError> {
     // array [1] SEQUENCE { packed [0] BOOLEAN OPT, numberOfElements [1] Unsigned32,
     //                      elementType [2] TypeSpecification }
     let mut r = BerReader::new(content);
@@ -171,11 +182,11 @@ fn decode_array_spec(content: &[u8]) -> Result<TypeSpec, MmsError> {
     let inner = er.read_tlv()?;
     Ok(TypeSpec::Array {
         elements,
-        element: Box::new(decode_type_spec(&inner)?),
+        element: Box::new(decode_type_spec_at(&inner, depth + 1)?),
     })
 }
 
-fn decode_structure(content: &[u8]) -> Result<Vec<StructComponent>, MmsError> {
+fn decode_structure(content: &[u8], depth: usize) -> Result<Vec<StructComponent>, MmsError> {
     let mut r = BerReader::new(content);
     let _ = r.read_if(Tag::context(0, false))?; // packed [0] BOOLEAN OPT
     let comps = r.expect(Tag::context(1, true))?; // components [1] SEQUENCE OF
@@ -193,7 +204,7 @@ fn decode_structure(content: &[u8]) -> Result<Vec<StructComponent>, MmsError> {
         let ty_tlv = ctr.read_tlv()?;
         out.push(StructComponent {
             name,
-            ty: decode_type_spec(&ty_tlv)?,
+            ty: decode_type_spec_at(&ty_tlv, depth + 1)?,
         });
     }
     Ok(out)

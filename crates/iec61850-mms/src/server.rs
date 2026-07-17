@@ -30,6 +30,8 @@ use crate::mms::get_name_list::{
 };
 use crate::mms::identify::{self, IdentifyResponse};
 use crate::mms::initiate::{InitiateRequest, InitiateResponse};
+use crate::mms::journal::{self, JournalEntry};
+use crate::mms::named_var_list;
 use crate::mms::pdu::{self, PduKind};
 use crate::mms::read::{self, AccessResult};
 use crate::mms::report::{self, ReportData, opt_flds};
@@ -43,6 +45,246 @@ const OUR_SRC_REF: u16 = 0x0002;
 /// Máximo de identificadores por página de GetNameList.
 pub const MAX_PAGE_ITEMS: usize = 100;
 
+/// Límites de robustez del servidor frente a clientes hostiles o defectuosos.
+/// Configurables con [`MmsServer::with_limits`]; los valores por defecto son
+/// conservadores para un IED de subestación.
+#[derive(Debug, Clone, Copy)]
+pub struct ServerLimits {
+    /// Conexiones simultáneas aceptadas. Las que exceden esperan a que se libere
+    /// un hueco (evita agotar memoria/descriptores por avalancha de conexiones).
+    pub max_connections: usize,
+    /// Tiempo máximo para completar el handshake COTP+ACSE. Corta clientes que
+    /// abren el socket y no progresan (slow-loris).
+    pub handshake_timeout: Duration,
+    /// Inactividad máxima de una sesión ya asociada antes de cerrarla.
+    pub idle_timeout: Duration,
+    /// Nº de eventos de reporting perdidos (`Lagged`) consecutivos que una
+    /// conexión puede acumular antes de cerrarse: un cliente que no drena sus
+    /// reportes no debe forzar al servidor a retenerlos indefinidamente.
+    pub max_report_lag: u64,
+}
+
+impl Default for ServerLimits {
+    fn default() -> Self {
+        Self {
+            max_connections: 64,
+            handshake_timeout: Duration::from_secs(10),
+            idle_timeout: Duration::from_secs(120),
+            max_report_lag: 256,
+        }
+    }
+}
+
+/// Rol de acceso de un cliente autenticado (IEC 62351-8, simplificado). Determina
+/// qué operaciones puede realizar tras asociarse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Role {
+    /// Solo lectura y descubrimiento (no escribe ni controla).
+    Viewer,
+    /// Lectura + control (Oper/Select) y reporting; no cambia configuración.
+    Operator,
+    /// Acceso completo: además escribe configuración (CF/SP/SE), settings. Es el
+    /// rol por defecto cuando no hay política de autenticación (`AuthPolicy::None`).
+    #[default]
+    Engineer,
+    /// Rol **personalizado** con un conjunto de permisos arbitrario (IEC 62351-8
+    /// permite roles definidos por el usuario más allá de los estándar).
+    Custom(Permissions),
+}
+
+/// Conjunto de permisos de una asociación (IEC 62351-8, simplificado). Se modela
+/// como bitflags sin dependencias externas; cada [`Role`] mapea a un conjunto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Permissions(u16);
+
+impl Permissions {
+    /// Leer objetos de datos (Read / ReadDataSetValues).
+    pub const DATA_READ: Self = Self(1 << 0);
+    /// Escribir valores de proceso (ST/MX/SV...).
+    pub const DATA_WRITE: Self = Self(1 << 1);
+    /// Controlar (Oper/Select/Cancel, FC=CO).
+    pub const CONTROL: Self = Self(1 << 2);
+    /// Operar RCBs / reporting (habilitar, GI; FC=RP/BR).
+    pub const REPORTING: Self = Self(1 << 3);
+    /// Definir/borrar datasets dinámicos (Define/DeleteNamedVariableList).
+    pub const DATASET_DEFINE: Self = Self(1 << 4);
+    /// Escribir configuración (FC=CF).
+    pub const CONFIG: Self = Self(1 << 5);
+    /// Manejar grupos de ajuste (FC=SG/SE/SP-SGCB) y **leer** el buffer de
+    /// edición (FC=SE), que es parte del flujo de ingeniería.
+    pub const SETTING: Self = Self(1 << 6);
+    /// Leer ficheros del servidor (fileOpen/Read, p. ej. oscilografías).
+    pub const FILE_READ: Self = Self(1 << 7);
+
+    /// Conjunto vacío (ningún permiso), para construir roles personalizados.
+    pub const NONE: Self = Self(0);
+
+    /// ¿Contiene todos los permisos de `other`?
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Bits en crudo del conjunto (para serializarlo, p. ej. en un token 62351-8).
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    /// Reconstruye un conjunto de permisos desde sus bits.
+    pub const fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
+
+impl std::ops::BitOr for Permissions {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl Role {
+    /// Conjunto de permisos del rol (IEC 62351-8).
+    pub fn permissions(self) -> Permissions {
+        use Permissions as P;
+        match self {
+            // Observador: lee datos y ficheros; no modifica nada.
+            Role::Viewer => P::DATA_READ | P::FILE_READ,
+            // Operador: además controla, opera reporting y define datasets de
+            // monitoreo; no toca configuración ni settings.
+            Role::Operator => {
+                P::DATA_READ | P::CONTROL | P::REPORTING | P::DATASET_DEFINE | P::FILE_READ
+            }
+            // Ingeniero: acceso completo.
+            Role::Engineer => {
+                P::DATA_READ
+                    | P::DATA_WRITE
+                    | P::CONTROL
+                    | P::REPORTING
+                    | P::DATASET_DEFINE
+                    | P::CONFIG
+                    | P::SETTING
+                    | P::FILE_READ
+            }
+            // Personalizado: el conjunto que porta.
+            Role::Custom(p) => p,
+        }
+    }
+
+    /// Rol a partir de un conjunto de permisos: si coincide con uno de los
+    /// estándar devuelve su nombre; en otro caso, un [`Role::Custom`]. Sirve para
+    /// reconstruir el rol de un token, que transporta el conjunto de permisos.
+    pub fn from_permissions(perms: Permissions) -> Role {
+        if perms == Role::Viewer.permissions() {
+            Role::Viewer
+        } else if perms == Role::Operator.permissions() {
+            Role::Operator
+        } else if perms == Role::Engineer.permissions() {
+            Role::Engineer
+        } else {
+            Role::Custom(perms)
+        }
+    }
+
+    /// Permiso exigido para **escribir** un `itemId`, según su FC.
+    fn write_permission(item: &str) -> Permissions {
+        if item.contains("$CO$") {
+            Permissions::CONTROL
+        } else if item.contains("$RP$") || item.contains("$BR$") {
+            Permissions::REPORTING
+        } else if is_setting_item(item) {
+            Permissions::SETTING
+        } else if item.contains("$CF$") {
+            Permissions::CONFIG
+        } else {
+            Permissions::DATA_WRITE
+        }
+    }
+
+    /// ¿Puede escribir la variable con este `itemId`?
+    fn may_write(self, item: &str) -> bool {
+        self.permissions().contains(Self::write_permission(item))
+    }
+
+    /// ¿Puede **leer** la variable con este `itemId`? El buffer de edición de
+    /// settings (FC=SE) exige el permiso `SETTING`; el resto, `DATA_READ`.
+    fn may_read(self, item: &str) -> bool {
+        let p = self.permissions();
+        if item.split('$').nth(1) == Some("SE") {
+            p.contains(Permissions::SETTING)
+        } else {
+            p.contains(Permissions::DATA_READ)
+        }
+    }
+
+    /// ¿Puede definir/borrar datasets dinámicos?
+    fn may_define_dataset(self) -> bool {
+        self.permissions().contains(Permissions::DATASET_DEFINE)
+    }
+
+    /// ¿Puede leer ficheros del servidor?
+    fn may_read_files(self) -> bool {
+        self.permissions().contains(Permissions::FILE_READ)
+    }
+}
+
+/// ¿El `itemId` es un ajuste (FC=SG/SE) o control del SGCB (FC=SP `$SGCB`)?
+fn is_setting_item(item: &str) -> bool {
+    matches!(item.split('$').nth(1), Some("SG") | Some("SE")) || item.contains("$SP$SGCB")
+}
+
+/// Política de autenticación del servidor (IEC 62351-4). Por defecto, ninguna.
+#[derive(Debug, Clone, Default)]
+pub enum AuthPolicy {
+    /// Sin autenticación: se aceptan todas las asociaciones como `Engineer`.
+    #[default]
+    None,
+    /// Requiere un password ACSE; cada password mapea a un rol. Una asociación
+    /// sin password válido se rechaza.
+    Passwords(Vec<(String, Role)>),
+    /// Requiere un **certificado de cliente** (mTLS): el CommonName del subject
+    /// mapea a un rol. Una asociación sin certificado o con un CN desconocido se
+    /// rechaza. Recomendado sobre el password (no viaja secreto por el canal).
+    Certificates(Vec<(String, Role)>),
+    /// Requiere un **access token firmado** (RBAC, IEC 62351-8): el cliente
+    /// presenta en el `authentication-value` un token emitido por una autoridad;
+    /// el servidor lo verifica con la clave de esa autoridad y toma el rol que
+    /// declara. No necesita un mapeo estático de credenciales.
+    #[cfg(feature = "tokens")]
+    Token(iec61850_l2::Verifier),
+}
+
+impl AuthPolicy {
+    /// Decide el rol de una asociación dadas las credenciales presentadas.
+    /// `password` = authentication-value del AARQ; `cert_cn` = CommonName del
+    /// certificado de cliente mTLS (si lo hubo). `None` ⇒ rechazar la asociación.
+    fn authorize(&self, password: Option<&[u8]>, cert_cn: Option<&str>) -> Option<Role> {
+        match self {
+            AuthPolicy::None => Some(Role::Engineer),
+            AuthPolicy::Passwords(list) => {
+                let pw = password?;
+                list.iter()
+                    .find(|(p, _)| p.as_bytes() == pw)
+                    .map(|(_, role)| *role)
+            }
+            AuthPolicy::Certificates(list) => {
+                let cn = cert_cn?;
+                list.iter().find(|(c, _)| c == cn).map(|(_, role)| *role)
+            }
+            #[cfg(feature = "tokens")]
+            AuthPolicy::Token(authority) => {
+                let token_bytes = password?;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                crate::mms::token::verify(token_bytes, authority, now)
+                    .ok()
+                    .map(|t| t.role)
+            }
+        }
+    }
+}
+
 /// Almacén de valores en vivo: `(domainId, itemId) -> MmsData`.
 pub type Store = Arc<RwLock<HashMap<(String, String), MmsData>>>;
 
@@ -54,12 +296,6 @@ pub struct ValueChange {
     pub value: MmsData,
 }
 
-/// Atributos comunes de un RCB que se siembran en el namespace/almacén.
-const RCB_ATTRS: &[&str] = &[
-    "RptID", "RptEna", "DatSet", "ConfRev", "OptFlds", "TrgOps", "IntgPd", "GI", "BufTm",
-];
-/// Atributos adicionales de un BRCB (bufferado).
-const BRCB_ATTRS: &[&str] = &["EntryID", "PurgeBuf"];
 /// Capacidad por defecto del buffer de un BRCB (nº de entradas).
 const BRCB_CAPACITY: usize = 64;
 
@@ -72,6 +308,270 @@ struct RcbDef {
     dataset: Option<String>,
     conf_rev: u32,
     buffered: bool,
+}
+
+impl RcbDef {
+    /// Componentes del RCB en el **orden exacto de IEC 61850-8-1** (verificado
+    /// contra libiec61850): `(nombreAtributo, valorPorDefecto)`. El orden importa
+    /// porque un cliente que lee el RCB como estructura asigna por posición.
+    /// URCB: 11 componentes; BRCB: 14.
+    fn components(&self) -> Vec<(&'static str, MmsData)> {
+        let mut c: Vec<(&'static str, MmsData)> = vec![
+            ("RptID", MmsData::Visible(self.rpt_id.clone())),
+            ("RptEna", MmsData::Bool(false)),
+        ];
+        if !self.buffered {
+            c.push(("Resv", MmsData::Bool(false)));
+        }
+        c.extend([
+            (
+                "DatSet",
+                MmsData::Visible(self.dataset.clone().unwrap_or_default()),
+            ),
+            ("ConfRev", MmsData::Uint(self.conf_rev as u64)),
+            (
+                "OptFlds",
+                MmsData::BitString(default_opt_flds(self.buffered)),
+            ),
+            ("BufTm", MmsData::Uint(0)),
+            ("SqNum", MmsData::Uint(0)),
+            (
+                "TrgOps",
+                MmsData::BitString(BitString::from_bits(&[false, true])),
+            ),
+            ("IntgPd", MmsData::Uint(0)),
+            ("GI", MmsData::Bool(false)),
+        ]);
+        if self.buffered {
+            c.extend([
+                ("PurgeBuf", MmsData::Bool(false)),
+                ("EntryID", MmsData::Octets(Vec::new())),
+                ("TimeofEntry", MmsData::BinaryTime(vec![0; 6])),
+                ("ResvTms", MmsData::Int(0)),
+            ]);
+        }
+        c
+    }
+}
+
+/// Definición de un Setting Group Control Block (SGCB) extraída del SCL.
+#[derive(Debug, Clone)]
+struct SgcbDef {
+    domain: String,
+    /// Base MMS del SGCB, `"<ln>$SP$SGCB"`.
+    base: String,
+    num_of_sgs: u32,
+    act_sg: u32,
+    resv_tms: bool,
+}
+
+impl SgcbDef {
+    /// Componentes del SGCB en el orden de IEC 61850-8-1 (verificado contra
+    /// libiec61850): `NumOfSG, ActSG, EditSG, CnfEdit, LActTm` (+`ResvTms`).
+    fn components(&self) -> Vec<(&'static str, MmsData)> {
+        let mut c = vec![
+            ("NumOfSG", MmsData::Uint(self.num_of_sgs as u64)),
+            ("ActSG", MmsData::Uint(self.act_sg as u64)),
+            ("EditSG", MmsData::Uint(0)),
+            ("CnfEdit", MmsData::Bool(false)),
+            ("LActTm", MmsData::Utc(UtcTime { raw: [0; 8] })),
+        ];
+        if self.resv_tms {
+            c.push(("ResvTms", MmsData::Uint(0)));
+        }
+        c
+    }
+}
+
+/// Descriptor de un valor de setting group localizado en el namespace.
+struct SettingRef {
+    /// `true` si es la vista editable (FC=SE), `false` para la activa (FC=SG).
+    editable: bool,
+    /// Clave canónica del ajuste, `<ln>$<tail>`, común a las vistas SG y SE.
+    canonical: String,
+    num_of_sgs: u32,
+}
+
+/// Clave interna del store para el valor confirmado de un ajuste en el grupo `g`.
+/// El prefijo `@` no aparece en itemIds MMS reales, así que no colisiona ni se
+/// expone en `GetNameList`.
+fn sg_group_key(group: u32, canonical: &str) -> String {
+    format!("@sg@{group}@{canonical}")
+}
+
+/// Clave interna del store para el valor **en edición** (pendiente de confirmar)
+/// de un ajuste.
+fn sg_edit_key(canonical: &str) -> String {
+    format!("@se@{canonical}")
+}
+
+/// Naturaleza de una escritura relacionada con grupos de ajuste.
+enum SgWrite {
+    /// `SelectActiveSG`: escribe `SGCB$ActSG`.
+    SelectActive,
+    /// `SelectEditSG`: escribe `SGCB$EditSG`.
+    SelectEdit,
+    /// `ConfirmEditSGValues`: escribe `SGCB$CnfEdit`.
+    ConfirmEdit,
+    /// Escritura de un valor editable (FC=SE) al buffer de edición.
+    EditValue(SettingRef),
+    /// Intento de escritura sobre la vista activa (FC=SG), de solo lectura.
+    ActiveValue,
+}
+
+/// Extrae un `u32` de un `MmsData::Uint`.
+fn mms_u32(v: &MmsData) -> Option<u32> {
+    match v {
+        MmsData::Uint(u) => Some(*u as u32),
+        _ => None,
+    }
+}
+
+/// Lee un atributo `Uint` del SGCB (p. ej. `ActSG`, `EditSG`) del mapa del store.
+fn sgcb_u32(
+    map: &HashMap<(String, String), MmsData>,
+    domain: &str,
+    base: Option<&str>,
+    attr: &str,
+) -> u32 {
+    base.and_then(|b| map.get(&(domain.to_string(), format!("{b}${attr}"))))
+        .and_then(mms_u32)
+        .unwrap_or(0)
+}
+
+/// Resuelve el valor de un ajuste según su vista: FC=SG → grupo activo (ActSG);
+/// FC=SE → valor pendiente de confirmar, o el del grupo en edición (EditSG).
+fn resolve_setting(
+    model: &ServerModel,
+    map: &HashMap<(String, String), MmsData>,
+    domain: &str,
+    sr: &SettingRef,
+) -> Option<MmsData> {
+    let base = model.sgcb_base(domain);
+    let clamp = |g: u32| -> u32 {
+        if (1..=sr.num_of_sgs).contains(&g) {
+            g
+        } else {
+            1
+        }
+    };
+    if sr.editable {
+        // Valor aún sin confirmar del grupo en edición, si lo hay.
+        if let Some(v) = map.get(&(domain.to_string(), sg_edit_key(&sr.canonical))) {
+            return Some(v.clone());
+        }
+        let g = clamp(sgcb_u32(map, domain, base, "EditSG"));
+        map.get(&(domain.to_string(), sg_group_key(g, &sr.canonical)))
+            .cloned()
+    } else {
+        let g = clamp(sgcb_u32(map, domain, base, "ActSG"));
+        map.get(&(domain.to_string(), sg_group_key(g, &sr.canonical)))
+            .cloned()
+    }
+}
+
+/// Aplica una escritura de grupo de ajuste (ver [`SgWrite`]).
+async fn handle_sg_write(
+    model: &ServerModel,
+    store: &Store,
+    change_tx: &broadcast::Sender<ValueChange>,
+    domain: &str,
+    item: &str,
+    value: MmsData,
+    sgw: SgWrite,
+) -> WriteResult {
+    match sgw {
+        SgWrite::SelectActive | SgWrite::SelectEdit => {
+            // El grupo destino debe existir (1..=NumOfSG).
+            let n = model.num_setting_groups(domain).unwrap_or(0) as u64;
+            match &value {
+                MmsData::Uint(g) if (1..=n).contains(g) => {
+                    store_write(store, change_tx, domain, item, value).await
+                }
+                _ => WriteResult::Failure(DataAccessError::ObjectValueInvalid),
+            }
+        }
+        SgWrite::ConfirmEdit => {
+            if matches!(value, MmsData::Bool(true)) {
+                confirm_edit_sg(model, store, domain).await;
+            }
+            // CnfEdit se auto-limpia tras procesar la confirmación.
+            if let Some(base) = model.sgcb_base(domain) {
+                store_write(
+                    store,
+                    change_tx,
+                    domain,
+                    &format!("{base}$CnfEdit"),
+                    MmsData::Bool(false),
+                )
+                .await;
+            }
+            WriteResult::Success
+        }
+        SgWrite::EditValue(sr) => {
+            // FC=SE: al buffer de edición, pendiente de ConfirmEditSGValues.
+            store_write(store, change_tx, domain, &sg_edit_key(&sr.canonical), value).await
+        }
+        // FC=SG es de solo lectura (refleja el grupo activo).
+        SgWrite::ActiveValue => WriteResult::Failure(DataAccessError::ObjectAccessDenied),
+    }
+}
+
+/// `ConfirmEditSGValues`: vuelca los valores editados (FC=SE) al grupo en edición
+/// (EditSG) y limpia el buffer de edición.
+async fn confirm_edit_sg(model: &ServerModel, store: &Store, domain: &str) {
+    let mut guard = store.write().await;
+    let edit = sgcb_u32(&guard, domain, model.sgcb_base(domain), "EditSG");
+    if !(1..=model.num_setting_groups(domain).unwrap_or(0)).contains(&edit) {
+        return; // sin grupo de edición válido: nada que confirmar
+    }
+    let staged: Vec<(String, MmsData)> = guard
+        .iter()
+        .filter(|((d, it), _)| d == domain && it.starts_with("@se@"))
+        .map(|((_, it), v)| (it.clone(), v.clone()))
+        .collect();
+    for (edit_key, v) in staged {
+        if let Some(canonical) = edit_key.strip_prefix("@se@") {
+            guard.insert((domain.to_string(), sg_group_key(edit, canonical)), v);
+        }
+        guard.remove(&(domain.to_string(), edit_key));
+    }
+}
+
+/// Definición de un Log Control Block (LCB) extraída del SCL.
+#[derive(Debug, Clone)]
+struct LcbDef {
+    domain: String,
+    /// Base MMS del LCB, `"<ln>$LG$<name>"`.
+    base: String,
+    log_ena: bool,
+    log_ref: String,
+    dataset: Option<String>,
+}
+
+impl LcbDef {
+    /// Componentes del LCB en el orden de IEC 61850-8-1 (verificado contra
+    /// libiec61850): `LogEna, LogRef, DatSet, OldEntrTm, NewEntrTm, OldEntr,
+    /// NewEntr, TrgOps, IntgPd`.
+    fn components(&self) -> Vec<(&'static str, MmsData)> {
+        vec![
+            ("LogEna", MmsData::Bool(self.log_ena)),
+            ("LogRef", MmsData::Visible(self.log_ref.clone())),
+            (
+                "DatSet",
+                MmsData::Visible(self.dataset.clone().unwrap_or_default()),
+            ),
+            ("OldEntrTm", MmsData::BinaryTime(vec![0; 6])),
+            ("NewEntrTm", MmsData::BinaryTime(vec![0; 6])),
+            ("OldEntr", MmsData::Octets(vec![0; 8])),
+            ("NewEntr", MmsData::Octets(vec![0; 8])),
+            (
+                "TrgOps",
+                MmsData::BitString(BitString::from_bits(&[false, true, true])),
+            ),
+            ("IntgPd", MmsData::Uint(0)),
+        ]
+    }
 }
 
 /// Buffer de un BRCB: cola de entradas con EntryID monótono.
@@ -128,6 +628,11 @@ pub struct ServerModel {
     items: BTreeMap<String, Vec<String>>,
     datasets: HashMap<(String, String), Vec<(String, String)>>,
     rcbs: Vec<RcbDef>,
+    sgcbs: Vec<SgcbDef>,
+    lcbs: Vec<LcbDef>,
+    /// Dominios (LD) con SGCB → número de grupos de ajuste. Un DA con FC=SG/SE en
+    /// uno de estos dominios es un valor de setting group (uno por grupo).
+    sg_domains: HashMap<String, u32>,
     ident: IdentifyResponse,
     page_size: usize,
     file_provider: Option<Arc<dyn FileProvider>>,
@@ -143,12 +648,48 @@ impl ServerModel {
             }
         }
 
-        // Datasets y RCBs por nodo lógico.
+        // Datasets, RCBs y SGCBs por nodo lógico.
         let mut datasets: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
         let mut rcbs: Vec<RcbDef> = Vec::new();
+        let mut sgcbs: Vec<SgcbDef> = Vec::new();
+        let mut lcbs: Vec<LcbDef> = Vec::new();
         for (objref, ln) in model.iter_logical_nodes() {
             let domain = objref.ld.clone();
             let ln_name = objref.ln.clone();
+            // LCB (control de log): estructura con FC=LG en el LN.
+            for lc in &ln.log_controls {
+                let base = format!("{ln_name}$LG${}", lc.name);
+                let def = LcbDef {
+                    domain: domain.clone(),
+                    base: base.clone(),
+                    log_ena: lc.log_ena,
+                    log_ref: format!("{domain}/{ln_name}${}", lc.name),
+                    dataset: lc.dataset.clone(),
+                };
+                let dom_items = items.entry(domain.clone()).or_default();
+                dom_items.push(base.clone());
+                for (attr, _) in def.components() {
+                    dom_items.push(format!("{base}${attr}"));
+                }
+                lcbs.push(def);
+            }
+            // SGCB (grupos de ajustes): estructura con FC=SP en el LN.
+            if let Some(sgcb) = &ln.setting_group_control {
+                let base = format!("{ln_name}$SP$SGCB");
+                let def = SgcbDef {
+                    domain: domain.clone(),
+                    base: base.clone(),
+                    num_of_sgs: sgcb.num_of_sgs,
+                    act_sg: sgcb.act_sg,
+                    resv_tms: sgcb.resv_tms,
+                };
+                let dom_items = items.entry(domain.clone()).or_default();
+                dom_items.push(base.clone());
+                for (attr, _) in def.components() {
+                    dom_items.push(format!("{base}${attr}"));
+                }
+                sgcbs.push(def);
+            }
             for ds in &ln.data_sets {
                 let members: Vec<(String, String)> = ds
                     .entries
@@ -164,24 +705,51 @@ impl ServerModel {
                     .rpt_id
                     .clone()
                     .unwrap_or_else(|| format!("{domain}/{ln_name}.{}", rc.name));
-                // sembrar atributos del RCB en el namespace
-                let dom_items = items.entry(domain.clone()).or_default();
-                for attr in RCB_ATTRS {
-                    dom_items.push(format!("{base}${attr}"));
-                }
-                if rc.buffered {
-                    for attr in BRCB_ATTRS {
-                        dom_items.push(format!("{base}${attr}"));
-                    }
-                }
-                rcbs.push(RcbDef {
+                let def = RcbDef {
                     domain: domain.clone(),
-                    base,
+                    base: base.clone(),
                     rpt_id,
                     dataset: rc.dataset.clone(),
                     conf_rev: rc.conf_rev.unwrap_or(1),
                     buffered: rc.buffered,
-                });
+                };
+                // Namespace del RCB: la base (leíble como estructura) + cada
+                // componente en el orden 8-1.
+                let dom_items = items.entry(domain.clone()).or_default();
+                dom_items.push(base.clone());
+                for (attr, _) in def.components() {
+                    dom_items.push(format!("{base}${attr}"));
+                }
+                rcbs.push(def);
+            }
+        }
+
+        // Dominios con SGCB → número de grupos de ajuste.
+        let mut sg_domains: HashMap<String, u32> = HashMap::new();
+        for sgcb in &sgcbs {
+            sg_domains
+                .entry(sgcb.domain.clone())
+                .and_modify(|n| *n = (*n).max(sgcb.num_of_sgs))
+                .or_insert(sgcb.num_of_sgs);
+        }
+        // Para cada valor de setting (FC=SG) en un dominio con SGCB, exponer
+        // además su vista editable FC=SE en el namespace (`<ln>$SE$<tail>`).
+        for (domain, num) in &sg_domains {
+            if *num == 0 {
+                continue;
+            }
+            if let Some(list) = items.get_mut(domain) {
+                let se_views: Vec<String> = list
+                    .iter()
+                    .filter_map(|it| {
+                        let mut p = it.splitn(3, '$');
+                        let ln = p.next()?;
+                        let fc = p.next()?;
+                        let tail = p.next()?;
+                        (fc == "SG").then(|| format!("{ln}$SE${tail}"))
+                    })
+                    .collect();
+                list.extend(se_views);
             }
         }
 
@@ -195,6 +763,9 @@ impl ServerModel {
             items,
             datasets,
             rcbs,
+            sgcbs,
+            lcbs,
+            sg_domains,
             ident,
             page_size: MAX_PAGE_ITEMS,
             file_provider: None,
@@ -243,6 +814,180 @@ impl ServerModel {
             .iter()
             .find(|r| r.domain == domain && r.base == base)
     }
+
+    /// Si `(domain, item)` es la **base** de un RCB (sin sufijo de atributo),
+    /// devuelve los nombres de sus componentes en el orden 8-1. Se usa para
+    /// responder a la lectura del RCB completo como estructura (`getRCBValues`).
+    fn rcb_component_names(&self, domain: &str, item: &str) -> Option<Vec<&'static str>> {
+        let def = self.rcb_def(domain, item)?;
+        Some(def.components().into_iter().map(|(name, _)| name).collect())
+    }
+
+    /// Ensambla una **estructura** MMS para un item que no es una hoja sino un
+    /// objeto compuesto (un DO o SDO), leyendo sus hojas del `store`. Necesario
+    /// para leer miembros de dataset que son objetos estructurados (p. ej. una
+    /// medida `AnIn1[MX]` = `{ mag {f}, q, t }`). Devuelve `None` si el item no
+    /// tiene hijos en el namespace (es hoja o no existe). El orden de los
+    /// componentes sigue el del namespace (que preserva el orden del SCL).
+    fn assemble_structured(
+        &self,
+        domain: &str,
+        item: &str,
+        store: &HashMap<(String, String), MmsData>,
+    ) -> Option<MmsData> {
+        let items = self.items.get(domain)?;
+        let prefix = format!("{item}$");
+        // Hijos directos: el primer segmento tras el prefijo, en orden, sin repetir.
+        let mut children: Vec<String> = Vec::new();
+        for it in items {
+            if let Some(rest) = it.strip_prefix(&prefix) {
+                let seg = rest.split('$').next().unwrap_or("");
+                let child = format!("{item}${seg}");
+                if !children.contains(&child) {
+                    children.push(child);
+                }
+            }
+        }
+        if children.is_empty() {
+            return None;
+        }
+        let comps = children
+            .iter()
+            .map(|child| {
+                // Si el hijo tiene sub-hojas (es una sub-estructura como `mag`),
+                // recursar; solo si no, tomar su valor plano del store. El orden
+                // importa: el store contiene entradas espurias para los nodos
+                // intermedios (bType="Struct" → default) que no deben ganar.
+                self.assemble_structured(domain, child, store)
+                    .or_else(|| store.get(&(domain.to_string(), child.clone())).cloned())
+                    .unwrap_or(MmsData::Bool(false))
+            })
+            .collect();
+        Some(MmsData::Structure(comps))
+    }
+
+    /// Si `(domain, item)` es la base de un SGCB, devuelve los nombres de sus
+    /// componentes en el orden 8-1 (no alfabético). Análogo a `rcb_component_names`.
+    fn sgcb_component_names(&self, domain: &str, item: &str) -> Option<Vec<&'static str>> {
+        let def = self
+            .sgcbs
+            .iter()
+            .find(|s| s.domain == domain && s.base == item)?;
+        Some(def.components().into_iter().map(|(name, _)| name).collect())
+    }
+
+    /// Si `(domain, item)` es la base de un LCB, devuelve sus componentes en el
+    /// orden 8-1. Análogo a `sgcb_component_names`.
+    fn lcb_component_names(&self, domain: &str, item: &str) -> Option<Vec<&'static str>> {
+        let def = self
+            .lcbs
+            .iter()
+            .find(|l| l.domain == domain && l.base == item)?;
+        Some(def.components().into_iter().map(|(name, _)| name).collect())
+    }
+
+    /// Si `(domain, item)` es un valor de setting group (FC=SG/SE en un dominio
+    /// con SGCB), devuelve su descriptor: si es editable (SE) y su clave canónica
+    /// `<ln>$<tail>` (independiente del FC, común a las vistas SG y SE) más el
+    /// número de grupos.
+    fn setting_ref(&self, domain: &str, item: &str) -> Option<SettingRef> {
+        let num_of_sgs = *self.sg_domains.get(domain)?;
+        let mut p = item.splitn(3, '$');
+        let ln = p.next()?;
+        let fc = p.next()?;
+        let tail = p.next()?;
+        let editable = match fc {
+            "SG" => false,
+            "SE" => true,
+            _ => return None,
+        };
+        Some(SettingRef {
+            editable,
+            canonical: format!("{ln}${tail}"),
+            num_of_sgs,
+        })
+    }
+
+    /// Base MMS del SGCB de un dominio (`"<ln>$SP$SGCB"`), si lo hay.
+    fn sgcb_base(&self, domain: &str) -> Option<&str> {
+        self.sgcbs
+            .iter()
+            .find(|s| s.domain == domain)
+            .map(|s| s.base.as_str())
+    }
+
+    /// Número de grupos de ajuste de un dominio (LD), si tiene SGCB.
+    fn num_setting_groups(&self, domain: &str) -> Option<u32> {
+        self.sg_domains.get(domain).copied()
+    }
+
+    /// Clasifica una escritura relacionada con grupos de ajuste sobre
+    /// `(domain, item)`: control del SGCB (ActSG/EditSG/CnfEdit) o valor de un
+    /// ajuste (FC=SE editable / FC=SG de solo lectura).
+    fn classify_sg_write(&self, domain: &str, item: &str) -> Option<SgWrite> {
+        if let Some(base) = self.sgcb_base(domain) {
+            if item == format!("{base}$ActSG") {
+                return Some(SgWrite::SelectActive);
+            }
+            if item == format!("{base}$EditSG") {
+                return Some(SgWrite::SelectEdit);
+            }
+            if item == format!("{base}$CnfEdit") {
+                return Some(SgWrite::ConfirmEdit);
+            }
+        }
+        let sr = self.setting_ref(domain, item)?;
+        Some(if sr.editable {
+            SgWrite::EditValue(sr)
+        } else {
+            SgWrite::ActiveValue
+        })
+    }
+
+    /// Si `(domain, item)` (p. ej. `"LLN0$EventLog"`) es el journal de un LCB
+    /// conocido, devuelve sus entradas. Aún no se persisten eventos reales, así
+    /// que genera entradas de ejemplo deterministas para exponer el servicio
+    /// `ReadJournal`.
+    fn journal_entries(&self, domain: &str, item: &str) -> Option<Vec<JournalEntry>> {
+        let log_ref = format!("{domain}/{item}");
+        self.lcbs.iter().find(|l| l.log_ref == log_ref)?;
+        Some(vec![
+            JournalEntry {
+                entry_id: 1u64.to_be_bytes().to_vec(),
+                occurrence_time: vec![0; 6],
+                values: vec![MmsData::Bool(true)],
+            },
+            JournalEntry {
+                entry_id: 2u64.to_be_bytes().to_vec(),
+                occurrence_time: vec![0; 6],
+                values: vec![MmsData::Bool(false)],
+            },
+        ])
+    }
+
+    /// Normaliza el **sufijo de instancia MMS** de un item de RCB. En el mapeo
+    /// IEC 61850-8-1, las instancias de un ReportControl llevan un índice de dos
+    /// dígitos (`EventsRCB` → `EventsRCB01`); clientes conformes (libiec61850) lo
+    /// usan al referenciar el RCB. Nuestro namespace usa el nombre del SCL sin
+    /// índice, así que aquí lo quitamos si con ello el RCB existe. Devuelve el
+    /// item tal cual si no procede (no es un RCB o no lleva índice conocido).
+    fn normalize_rcb_item(&self, domain: &str, item: &str) -> String {
+        for fc in ["$RP$", "$BR$"] {
+            let Some(pos) = item.find(fc) else { continue };
+            let after = &item[pos + fc.len()..];
+            let (rcb_name, rest) = match after.find('$') {
+                Some(p) => (&after[..p], &after[p..]),
+                None => (after, ""),
+            };
+            if let Some(stripped) = rcb_name.strip_suffix("01") {
+                let base = format!("{}{fc}{stripped}", &item[..pos]);
+                if self.rcb_def(domain, &base).is_some() {
+                    return format!("{base}{rest}");
+                }
+            }
+        }
+        item.to_string()
+    }
     fn dataset_members(&self, domain: &str, name: &str) -> Option<&[(String, String)]> {
         self.datasets
             .get(&(domain.to_string(), name.to_string()))
@@ -274,41 +1019,42 @@ impl ServerModel {
                 let value = da
                     .value
                     .as_ref()
-                    .and_then(|v| value_to_mms(&da.basic_type, v))
+                    .and_then(|v| value_to_mms(da, v))
                     .unwrap_or_else(|| default_for(&da.basic_type));
+                // Valor de setting group (FC=SG): sembrar una copia por cada grupo
+                // de ajuste (todos parten del mismo valor inicial del SCL).
+                if let Some(sr) = self.setting_ref(&domain, &item) {
+                    if !sr.editable {
+                        for g in 1..=sr.num_of_sgs {
+                            map.insert(
+                                (domain.clone(), sg_group_key(g, &sr.canonical)),
+                                value.clone(),
+                            );
+                        }
+                    }
+                }
                 map.insert((domain, item), value);
             }
         }
-        // Sembrar atributos de cada RCB.
+        // Sembrar atributos de cada RCB en el orden estándar de 8-1.
         for rcb in &self.rcbs {
-            let d = rcb.domain.clone();
-            let put = |map: &mut HashMap<(String, String), MmsData>, attr: &str, v: MmsData| {
-                map.insert((d.clone(), format!("{}${attr}", rcb.base)), v);
-            };
-            put(&mut map, "RptID", MmsData::Visible(rcb.rpt_id.clone()));
-            put(&mut map, "RptEna", MmsData::Bool(false));
-            put(
-                &mut map,
-                "DatSet",
-                MmsData::Visible(rcb.dataset.clone().unwrap_or_default()),
-            );
-            put(&mut map, "ConfRev", MmsData::Uint(rcb.conf_rev as u64));
-            put(
-                &mut map,
-                "OptFlds",
-                MmsData::BitString(default_opt_flds(rcb.buffered)),
-            );
-            put(
-                &mut map,
-                "TrgOps",
-                MmsData::BitString(BitString::from_bits(&[false, true])),
-            ); // dchg
-            put(&mut map, "IntgPd", MmsData::Uint(0));
-            put(&mut map, "GI", MmsData::Bool(false));
-            put(&mut map, "BufTm", MmsData::Uint(0));
-            if rcb.buffered {
-                put(&mut map, "EntryID", MmsData::Octets(Vec::new()));
-                put(&mut map, "PurgeBuf", MmsData::Bool(false));
+            for (attr, value) in rcb.components() {
+                map.insert((rcb.domain.clone(), format!("{}${attr}", rcb.base)), value);
+            }
+        }
+        // Sembrar los componentes de cada SGCB (grupos de ajustes).
+        for sgcb in &self.sgcbs {
+            for (attr, value) in sgcb.components() {
+                map.insert(
+                    (sgcb.domain.clone(), format!("{}${attr}", sgcb.base)),
+                    value,
+                );
+            }
+        }
+        // Sembrar los componentes de cada LCB (control de log).
+        for lcb in &self.lcbs {
+            for (attr, value) in lcb.components() {
+                map.insert((lcb.domain.clone(), format!("{}${attr}", lcb.base)), value);
             }
         }
         Arc::new(RwLock::new(map))
@@ -331,17 +1077,25 @@ fn fcda_item(f: &iec61850_model::Fcda) -> Option<String> {
     Some(item)
 }
 
-fn value_to_mms(bt: &BasicType, v: &Value) -> Option<MmsData> {
+fn value_to_mms(da: &iec61850_model::DataAttribute, v: &Value) -> Option<MmsData> {
     use BasicType::*;
-    Some(match bt {
+    Some(match da.basic_type {
         Boolean => MmsData::Bool(v.as_bool()?),
         Int8 | Int16 | Int32 | Int64 => MmsData::Int(v.as_i64()?),
         Int8u | Int16u | Int32u => MmsData::Uint(v.as_i64()? as u64),
         Float32 | Float64 => MmsData::Float(v.as_f64()?),
-        Enum | Dbpos | Tcmd => v
-            .as_i64()
-            .map(MmsData::Int)
-            .unwrap_or_else(|| MmsData::Visible(v.raw.clone())),
+        // Un enum viaja por MMS como INTEGER (ordinal). El SCL puede dar el valor
+        // como ordinal (`1`) o como literal (`"on"`); traducimos el literal a su
+        // ordinal usando la tabla del EnumType (fidelidad SCL 3.4). Si no está en
+        // la tabla, último recurso: el literal como string (no conforme, pero no
+        // perdemos el dato).
+        Enum | Dbpos | Tcmd => match v.as_i64() {
+            Some(ord) => MmsData::Int(ord),
+            None => match da.enum_ordinal(&v.raw) {
+                Some(ord) => MmsData::Int(ord),
+                None => MmsData::Visible(v.raw.clone()),
+            },
+        },
         VisString { .. } | Unicode { .. } | ObjRef => MmsData::Visible(v.raw.clone()),
         _ => return None,
     })
@@ -425,8 +1179,14 @@ pub struct MmsServer {
     change_tx: broadcast::Sender<ValueChange>,
     buffers: Buffers,
     buffer_tx: broadcast::Sender<(String, String)>,
+    limits: ServerLimits,
+    auth: AuthPolicy,
     #[cfg(feature = "tls")]
     acceptor: Option<tokio_rustls::TlsAcceptor>,
+    /// Fuente de revocación (IEC 62351-9): si se configura, el certificado del par
+    /// se valida (vigencia + no revocado, CRL u OCSP) durante la asociación.
+    #[cfg(feature = "tls")]
+    revocation: Option<Arc<crate::transport::tls::RevocationSource>>,
 }
 
 impl MmsServer {
@@ -445,9 +1205,47 @@ impl MmsServer {
             change_tx,
             buffers: Arc::new(Mutex::new(HashMap::new())),
             buffer_tx,
+            limits: ServerLimits::default(),
+            auth: AuthPolicy::None,
             #[cfg(feature = "tls")]
             acceptor: None,
+            #[cfg(feature = "tls")]
+            revocation: None,
         })
+    }
+
+    /// Ajusta los [`ServerLimits`] de robustez (conexiones, timeouts, lag).
+    pub fn with_limits(mut self, limits: ServerLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Configura la política de **autenticación** ACSE (IEC 62351-4) y el RBAC
+    /// asociado (IEC 62351-8): asociaciones sin password válido se rechazan, y
+    /// el rol del password limita qué puede escribir/controlar el cliente.
+    pub fn with_auth(mut self, auth: AuthPolicy) -> Self {
+        self.auth = auth;
+        self
+    }
+
+    /// Configura una **lista de revocación de certificados** (CRL, IEC 62351-9).
+    /// Con ella, el certificado de cliente (mTLS) se valida durante la asociación:
+    /// se rechaza si está fuera de su ventana de validez o si su número de serie
+    /// figura en la CRL. Parsea la CRL con [`crate::transport::tls::parse_crl`].
+    #[cfg(feature = "tls")]
+    pub fn with_crl(mut self, crl: crate::transport::tls::CrlInfo) -> Self {
+        self.revocation = Some(Arc::new(crl.into()));
+        self
+    }
+
+    /// Configura una **respuesta OCSP** (RFC 6960, IEC 62351-9) pre-obtenida como
+    /// fuente de revocación: el certificado de cliente se rechaza si la OCSP lo
+    /// marca revocado o desconocido. Parsea la respuesta con
+    /// [`crate::transport::tls::parse_ocsp_response`].
+    #[cfg(feature = "tls")]
+    pub fn with_ocsp(mut self, ocsp: crate::transport::tls::OcspResponse) -> Self {
+        self.revocation = Some(Arc::new(ocsp.into()));
+        self
     }
 
     /// Vincula el servidor sirviendo sobre **TLS** (mTLS, IEC 62351-3): cada
@@ -486,31 +1284,63 @@ impl MmsServer {
                 brcbs,
             ));
         }
+        // Semáforo global: acota las conexiones simultáneas. Un permiso viaja
+        // con cada tarea de conexión y se libera al terminar (RAII).
+        let conn_limit = Arc::new(tokio::sync::Semaphore::new(self.limits.max_connections));
+        let limits = self.limits;
+        let auth = Arc::new(self.auth);
         loop {
             let (sock, _) = self.listener.accept().await?;
+            // Espera un hueco antes de gastar recursos en el handshake.
+            let permit = match conn_limit.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => break, // semáforo cerrado: nunca ocurre aquí
+            };
             let model = self.model.clone();
             let store = self.store.clone();
             let change_tx = self.change_tx.clone();
             let buffers = self.buffers.clone();
             let buffer_rx = self.buffer_tx.subscribe();
+            let auth = auth.clone();
             #[cfg(feature = "tls")]
             let acceptor = self.acceptor.clone();
+            #[cfg(feature = "tls")]
+            let revocation = self.revocation.clone();
             tokio::spawn(async move {
+                let _permit = permit; // se libera al salir del scope
                 // Establece el transporte (en claro o TLS) antes del handshake MMS.
+                // El handshake TLS también está sujeto al timeout de handshake.
                 #[cfg(feature = "tls")]
                 let conn = match acceptor {
-                    Some(acc) => match IsoConnection::from_stream_tls(sock, &acc).await {
-                        Ok(c) => c,
-                        Err(_) => return, // handshake TLS fallido
-                    },
+                    Some(acc) => {
+                        match tokio::time::timeout(
+                            limits.handshake_timeout,
+                            IsoConnection::from_stream_tls(sock, &acc),
+                        )
+                        .await
+                        {
+                            Ok(Ok(c)) => c,
+                            _ => return, // handshake TLS fallido o expirado
+                        }
+                    }
                     None => IsoConnection::from_stream(sock),
                 };
                 #[cfg(not(feature = "tls"))]
                 let conn = IsoConnection::from_stream(sock);
 
-                let _ = handle_connection(conn, model, store, change_tx, buffers, buffer_rx).await;
+                #[cfg(feature = "tls")]
+                let _ = handle_connection(
+                    conn, model, store, change_tx, buffers, buffer_rx, limits, auth, revocation,
+                )
+                .await;
+                #[cfg(not(feature = "tls"))]
+                let _ = handle_connection(
+                    conn, model, store, change_tx, buffers, buffer_rx, limits, auth,
+                )
+                .await;
             });
         }
+        Ok(())
     }
 }
 
@@ -580,16 +1410,22 @@ struct FileReadState {
 /// Tamaño de bloque que devuelve cada `fileRead`.
 const FILE_READ_CHUNK: usize = 8192;
 
-/// Estado de una conexión: RCBs habilitados, selecciones de control y ficheros
-/// abiertos.
+/// Estado de una conexión: RCBs habilitados, selecciones de control, ficheros
+/// abiertos y datasets **dinámicos** creados por el cliente (por conexión).
 #[derive(Default)]
 struct ConnState {
     rcbs: HashMap<(String, String), RcbRuntime>, // (domain, base)
     selections: HashMap<(String, String), MmsData>,
     files: HashMap<i32, FileReadState>,
     next_frsm: i32,
+    /// Datasets dinámicos `(domain, name) -> miembros`, creados con
+    /// `DefineNamedVariableList` y visibles solo en esta conexión.
+    dynamic_datasets: HashMap<(String, String), Vec<(String, String)>>,
+    /// Rol RBAC de esta conexión (IEC 62351-8), fijado tras la autenticación.
+    role: Role,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     mut conn: IsoConnection,
     model: Arc<ServerModel>,
@@ -597,30 +1433,88 @@ async fn handle_connection(
     change_tx: broadcast::Sender<ValueChange>,
     buffers: Buffers,
     mut buffer_rx: broadcast::Receiver<(String, String)>,
+    limits: ServerLimits,
+    auth: Arc<AuthPolicy>,
+    #[cfg(feature = "tls")] revocation: Option<Arc<crate::transport::tls::RevocationSource>>,
 ) -> Result<(), MmsError> {
-    // COTP: CR → CC.
-    let cr = conn.recv().await?;
-    let client_ref = cotp::parse_connection_request(&cr)?;
-    conn.send(&cotp::connection_confirm(client_ref, OUR_SRC_REF))
-        .await?;
+    // Todo el handshake (COTP CR→CC + asociación ACSE) bajo un único timeout:
+    // un peer que abre el socket y no progresa se descarta pronto.
+    let role = tokio::time::timeout(limits.handshake_timeout, async {
+        // COTP: CR → CC.
+        let cr = conn.recv().await?;
+        let client_ref = cotp::parse_connection_request(&cr)?;
+        conn.send(&cotp::connection_confirm(client_ref, OUR_SRC_REF))
+            .await?;
 
-    // Asociación.
-    let assoc = conn.recv_data().await?;
-    let aarq = presentation::extract_inner_pdu(&assoc)?;
-    let req = InitiateRequest::decode(acse::parse_aarq(aarq)?)?;
-    let resp = InitiateResponse::accept(&req);
-    let accept = session::accept(&presentation::connect_cpa(&acse::aare(&resp.encode())));
-    conn.send(&cotp::data_tpdu(&accept)).await?;
+        // Asociación: autentica (IEC 62351-4) antes de aceptar.
+        let assoc = conn.recv_data().await?;
+        let aarq = presentation::extract_inner_pdu(&assoc)?;
+        let password = acse::extract_auth_password(aarq);
+        // Certificado de cliente (mTLS), si lo hubo: se valida (IEC 62351-9) —
+        // vigencia y, con CRL configurada, no revocación — y se extrae el CN.
+        #[cfg(feature = "tls")]
+        let cert_cn = match conn.peer_certificate() {
+            Some(der) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                if let Err(e) =
+                    crate::transport::tls::validate_certificate(&der, revocation.as_deref(), now)
+                {
+                    let reject = session::accept(&presentation::connect_cpa(&acse::aare_reject()));
+                    let _ = conn.send(&cotp::data_tpdu(&reject)).await;
+                    return Err(MmsError::AssociateRejected(format!(
+                        "certificado rechazado (62351-9): {e}"
+                    )));
+                }
+                crate::transport::tls::cert_common_name(&der)
+            }
+            None => None,
+        };
+        #[cfg(not(feature = "tls"))]
+        let cert_cn: Option<String> = None;
+        let role = match auth.authorize(password.as_deref(), cert_cn.as_deref()) {
+            Some(role) => role,
+            None => {
+                // Autenticación fallida: responder AARE de rechazo y cerrar.
+                let reject = session::accept(&presentation::connect_cpa(&acse::aare_reject()));
+                let _ = conn.send(&cotp::data_tpdu(&reject)).await;
+                return Err(MmsError::AssociateRejected(
+                    "autenticación fallida (62351-4)".into(),
+                ));
+            }
+        };
+        let inner = acse::parse_aarq(aarq)?;
+        let req = InitiateRequest::decode(inner)?;
+        let resp = InitiateResponse::accept(&req);
+        let accept = session::accept(&presentation::connect_cpa(&acse::aare(&resp.encode())));
+        conn.send(&cotp::data_tpdu(&accept)).await?;
+        Ok::<_, MmsError>(role)
+    })
+    .await
+    .map_err(|_| MmsError::Timeout)??;
 
     // Separar para poder leer peticiones y empujar reportes a la vez.
     let (mut reader, mut writer) = conn.split();
     let mut change_rx = change_tx.subscribe();
-    let mut state = ConnState::default();
+    let mut state = ConnState {
+        role,
+        ..ConnState::default()
+    };
+    // Reportes perdidos acumulados por un cliente que no drena a tiempo.
+    let mut report_lag: u64 = 0;
 
     loop {
         let next_int = state.next_integrity_deadline();
+        let idle = tokio::time::sleep(limits.idle_timeout);
         tokio::select! {
             biased;
+
+            _ = idle => {
+                // Sin actividad de petición ni reporte en el plazo: cerrar.
+                break;
+            }
 
             r = reader.recv_data() => {
                 let payload = match r { Ok(p) => p, Err(_) => break };
@@ -653,7 +1547,15 @@ async fn handle_connection(
                             send_report(&mut writer, &rep).await?;
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // El cliente no drena sus reportes: contabiliza las tramas
+                        // perdidas y desconecta si supera el umbral (anti-DoS de
+                        // memoria; un URCB no bufferado no debe retenerlas).
+                        report_lag = report_lag.saturating_add(n);
+                        if report_lag > limits.max_report_lag {
+                            break;
+                        }
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
@@ -665,7 +1567,12 @@ async fn handle_connection(
                             send_report(&mut writer, &rep).await?;
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        report_lag = report_lag.saturating_add(n);
+                        if report_lag > limits.max_report_lag {
+                            break;
+                        }
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
@@ -737,13 +1644,90 @@ impl ConnState {
         } else if tag == pdu::service::WRITE {
             self.handle_write(invoke, service, model, store, change_tx, buffers)
                 .await
+        } else if tag == pdu::service::DEFINE_NAMED_VARIABLE_LIST {
+            (self.handle_define_dataset(invoke, service), no_reports)
+        } else if tag == pdu::service::DELETE_NAMED_VARIABLE_LIST {
+            (self.handle_delete_dataset(invoke, service), no_reports)
+        } else if tag == pdu::service::GET_NAMED_VARIABLE_LIST_ATTRIBUTES {
+            (
+                self.handle_get_dataset_attrs(invoke, service, model),
+                no_reports,
+            )
+        } else if tag == pdu::service::READ_JOURNAL {
+            (handle_read_journal(invoke, service, model), no_reports)
         } else {
             (encode_error(invoke), no_reports)
         }
     }
 
+    /// `DefineNamedVariableList`: crea un dataset dinámico en esta conexión.
+    fn handle_define_dataset(&mut self, invoke: u32, service: &Tlv<'_>) -> Vec<u8> {
+        // RBAC (IEC 62351-8): definir datasets exige el permiso correspondiente.
+        if !self.role.may_define_dataset() {
+            return encode_error(invoke);
+        }
+        let Ok(((domain, name), members)) = named_var_list::decode_define_request(service) else {
+            return encode_error(invoke);
+        };
+        self.dynamic_datasets.insert((domain, name), members);
+        pdu::encode_confirmed_response(invoke, named_var_list::encode_define_response)
+    }
+
+    /// `DeleteNamedVariableList`: borra los datasets dinámicos indicados.
+    fn handle_delete_dataset(&mut self, invoke: u32, service: &Tlv<'_>) -> Vec<u8> {
+        if !self.role.may_define_dataset() {
+            return encode_error(invoke);
+        }
+        let Ok(names) = named_var_list::decode_delete_request(service) else {
+            return encode_error(invoke);
+        };
+        let mut matched = 0;
+        let mut deleted = 0;
+        for key in names {
+            matched += 1;
+            if self.dynamic_datasets.remove(&key).is_some() {
+                deleted += 1;
+            }
+        }
+        pdu::encode_confirmed_response(invoke, |w| {
+            named_var_list::encode_delete_response(
+                w,
+                named_var_list::DeleteResult { matched, deleted },
+            )
+        })
+    }
+
+    /// `GetNamedVariableListAttributes`: devuelve los miembros de un dataset
+    /// (dinámico de esta conexión o estático del modelo).
+    fn handle_get_dataset_attrs(
+        &self,
+        invoke: u32,
+        service: &Tlv<'_>,
+        model: &ServerModel,
+    ) -> Vec<u8> {
+        let Ok((domain, name)) = named_var_list::decode_get_attributes_request(service) else {
+            return encode_error(invoke);
+        };
+        // Los dinámicos son borrables; los estáticos del SCL, no.
+        let (deletable, members) =
+            if let Some(m) = self.dynamic_datasets.get(&(domain.clone(), name.clone())) {
+                (true, m.clone())
+            } else if let Some(m) = model.dataset_members(&domain, &name) {
+                (false, m.to_vec())
+            } else {
+                return encode_error(invoke);
+            };
+        pdu::encode_confirmed_response(invoke, |w| {
+            named_var_list::encode_get_attributes_response(w, deletable, &members)
+        })
+    }
+
     /// `fileOpen`: lee el fichero del proveedor a memoria y asigna un frsmID.
     fn handle_file_open(&mut self, invoke: u32, service: &Tlv<'_>, model: &ServerModel) -> Vec<u8> {
+        // RBAC (IEC 62351-8): la lectura de ficheros exige el permiso FILE_READ.
+        if !self.role.may_read_files() {
+            return encode_error(invoke);
+        }
         let Some(provider) = model.file_provider() else {
             return encode_error(invoke);
         };
@@ -806,27 +1790,88 @@ impl ConnState {
         model: &ServerModel,
         store: &Store,
     ) -> Vec<u8> {
-        let Ok(vars) = read::decode_request(service) else {
-            return encode_error(invoke);
+        let vars = match read::decode_request(service) {
+            // Lista explícita de variables.
+            Ok(read::ReadTarget::Variables(v)) => v,
+            // Dataset por nombre: resolver a sus miembros (readDataSetValues).
+            // Busca primero entre los dinámicos de esta conexión, luego estáticos.
+            Ok(read::ReadTarget::NamedList(domain, name)) => {
+                let members = self
+                    .dynamic_datasets
+                    .get(&(domain.clone(), name.clone()))
+                    .cloned()
+                    .or_else(|| model.dataset_members(&domain, &name).map(|m| m.to_vec()));
+                match members {
+                    Some(m) => m,
+                    None => {
+                        // Dataset inexistente → un único fallo de acceso.
+                        return pdu::encode_confirmed_response(invoke, |w| {
+                            read::encode_response(
+                                w,
+                                &[AccessResult::Failure(DataAccessError::ObjectNonExistent)],
+                            )
+                        });
+                    }
+                }
+            }
+            Err(_) => return encode_error(invoke),
         };
         let guard = store.read().await;
         let results: Vec<AccessResult> = vars
             .iter()
             .map(|(d, i)| {
+                // RBAC (IEC 62351-8): el rol debe permitir leer este item. Cubre
+                // tanto Read como ReadDataSetValues (aquí `vars` son los miembros).
+                if !self.role.may_read(i) {
+                    return AccessResult::Failure(DataAccessError::ObjectAccessDenied);
+                }
                 // Select-before-operate: leer $SBO concede el control.
                 if let Some(base) = i.strip_suffix("$SBO") {
                     self.selections
                         .insert((d.clone(), base.to_string()), MmsData::Visible(i.clone()));
                     return AccessResult::Success(MmsData::Visible(i.clone()));
                 }
-                if !model.contains(d, i) {
-                    AccessResult::Failure(DataAccessError::ObjectNonExistent)
-                } else {
-                    match guard.get(&(d.clone(), i.clone())) {
-                        Some(v) => AccessResult::Success(v.clone()),
-                        None => AccessResult::Failure(DataAccessError::TemporarilyUnavailable),
-                    }
+                // Normaliza el sufijo de instancia MMS ("01") que añaden clientes
+                // conformes (libiec61850): "EventsRCB01" → "EventsRCB".
+                let i = &model.normalize_rcb_item(d, i);
+                // Lectura del RCB completo (getRCBValues): ensamblar una estructura
+                // con sus componentes en el orden 8-1.
+                // RCB, SGCB o LCB completos: estructura con sus componentes en el
+                // orden 8-1 (no el alfabético del namespace).
+                if let Some(names) = model
+                    .rcb_component_names(d, i)
+                    .or_else(|| model.sgcb_component_names(d, i))
+                    .or_else(|| model.lcb_component_names(d, i))
+                {
+                    let comps = names
+                        .iter()
+                        .map(|attr| {
+                            guard
+                                .get(&(d.clone(), format!("{i}${attr}")))
+                                .cloned()
+                                .unwrap_or(MmsData::Bool(false))
+                        })
+                        .collect();
+                    return AccessResult::Success(MmsData::Structure(comps));
                 }
+                // Valor de setting group: la vista FC=SG devuelve el grupo activo
+                // (ActSG); la FC=SE, el grupo en edición (EditSG) o su valor
+                // pendiente de confirmar.
+                if let Some(sr) = model.setting_ref(d, i) {
+                    return match resolve_setting(model, &guard, d, &sr) {
+                        Some(v) => AccessResult::Success(v),
+                        None => AccessResult::Failure(DataAccessError::ObjectNonExistent),
+                    };
+                }
+                // Hoja directa del store.
+                if let Some(v) = guard.get(&(d.clone(), i.clone())) {
+                    return AccessResult::Success(v.clone());
+                }
+                // Objeto compuesto (DO/SDO): ensamblar su estructura desde las hojas.
+                if let Some(s) = model.assemble_structured(d, i, &guard) {
+                    return AccessResult::Success(s);
+                }
+                AccessResult::Failure(DataAccessError::ObjectNonExistent)
             })
             .collect();
         pdu::encode_confirmed_response(invoke, |w| read::encode_response(w, &results))
@@ -854,6 +1899,18 @@ impl ConnState {
                 ));
                 continue;
             };
+
+            // Normaliza el sufijo de instancia MMS ("01") de items de RCB que
+            // usan clientes conformes (libiec61850): "EventsRCB01$RptEna" →
+            // "EventsRCB$RptEna". No afecta a variables que no son de RCB.
+            let item = &model.normalize_rcb_item(domain, item);
+
+            // RBAC (IEC 62351-8): el rol de la conexión debe permitir escribir
+            // este item; si no, se rechaza con acceso denegado.
+            if !self.role.may_write(item) {
+                results.push(WriteResult::Failure(DataAccessError::ObjectAccessDenied));
+                continue;
+            }
 
             let result = if let Some(base) = item.strip_suffix("$RptEna") {
                 let r = self
@@ -899,6 +1956,10 @@ impl ConnState {
                 self.selections
                     .insert((domain.clone(), base.to_string()), value);
                 WriteResult::Success
+            } else if let Some(sgw) = model.classify_sg_write(domain, item) {
+                // Grupos de ajuste: SelectActiveSG/SelectEditSG (rango),
+                // ConfirmEditSGValues, o escritura de un valor FC=SE/SG.
+                handle_sg_write(model, store, change_tx, domain, item, value, sgw).await
             } else if model.contains(domain, item) {
                 store_write(store, change_tx, domain, item, value).await
             } else {
@@ -1341,6 +2402,19 @@ fn encode_error(invoke: u32) -> Vec<u8> {
 }
 
 /// Responde `fileDirectory`: lista el proveedor de ficheros del servidor.
+/// `ReadJournal`: devuelve las entradas del journal (log) nombrado.
+fn handle_read_journal(invoke: u32, service: &Tlv<'_>, model: &ServerModel) -> Vec<u8> {
+    let Ok((domain, item)) = journal::decode_request(service) else {
+        return encode_error(invoke);
+    };
+    match model.journal_entries(&domain, &item) {
+        Some(entries) => {
+            pdu::encode_confirmed_response(invoke, |w| journal::encode_response(w, &entries, false))
+        }
+        None => encode_error(invoke),
+    }
+}
+
 fn handle_file_directory(invoke: u32, service: &Tlv<'_>, model: &ServerModel) -> Vec<u8> {
     let Some(provider) = model.file_provider() else {
         return encode_error(invoke);

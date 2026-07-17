@@ -25,9 +25,14 @@ impl WriteResult {
 }
 
 /// Escribe el servicio `write` de una variable domain-specific con su valor.
+///
+/// NOTA de conformidad (verificada contra libiec61850): a diferencia de
+/// `ReadRequest`, en `WriteRequest` el `variableAccessSpecification` **no lleva
+/// tag envolvente** (`[1]`): el CHOICE `listOfVariable [0]` va directamente, y
+/// `listOfData [0]` le sigue (se desambiguan por orden). No "corregir" a `[1]`.
 pub fn write_request(w: &mut BerWriter, domain_id: &str, item_id: &str, value: &MmsData) {
     w.tlv(service::WRITE, |w| {
-        // variableAccessSpecification: listOfVariable [0] SEQUENCE OF
+        // variableAccessSpecification → listOfVariable [0] SEQUENCE OF (sin wrapper)
         w.tlv(Tag::context(0, true), |w| {
             w.sequence(|w| {
                 // variableSpecification: name [0] EXPLICIT ObjectName

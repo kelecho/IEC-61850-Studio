@@ -26,18 +26,26 @@ impl AccessResult {
 }
 
 /// Escribe el servicio `read` de una variable domain-specific.
+///
+/// Estructura conforme a ISO 9506 (verificada contra libiec61850):
+/// `ReadRequest { specificationWithResult [0] OPT, variableAccessSpecification [1] }`,
+/// donde el CHOICE es `listOfVariable [0] SEQUENCE OF ListOfVariableSeq`.
 pub fn write_request(w: &mut BerWriter, domain_id: &str, item_id: &str) {
     w.tlv(service::READ, |w| {
         // (specificationWithResult [0] omitido → FALSE por defecto)
-        // variableAccessSpecification: listOfVariable [0] SEQUENCE OF
-        w.tlv(Tag::context(0, true), |w| {
-            w.sequence(|w| {
-                // variableSpecification: name [0] EXPLICIT ObjectName
-                w.tlv(Tag::context(0, true), |w| {
-                    // ObjectName: domain-specific [1] IMPLICIT SEQUENCE { domainId, itemId }
-                    w.tlv(Tag::context(1, true), |w| {
-                        w.visible_string(universal::VISIBLE_STRING, domain_id);
-                        w.visible_string(universal::VISIBLE_STRING, item_id);
+        // variableAccessSpecification [1]
+        w.tlv(Tag::context(1, true), |w| {
+            // listOfVariable [0] IMPLICIT SEQUENCE OF
+            w.tlv(Tag::context(0, true), |w| {
+                // ListOfVariableSeq: SEQUENCE { variableSpecification, ... }
+                w.sequence(|w| {
+                    // variableSpecification → name [0] EXPLICIT ObjectName
+                    w.tlv(Tag::context(0, true), |w| {
+                        // ObjectName: domain-specific [1] IMPLICIT SEQUENCE { domainId, itemId }
+                        w.tlv(Tag::context(1, true), |w| {
+                            w.visible_string(universal::VISIBLE_STRING, domain_id);
+                            w.visible_string(universal::VISIBLE_STRING, item_id);
+                        });
                     });
                 });
             });
@@ -45,15 +53,64 @@ pub fn write_request(w: &mut BerWriter, domain_id: &str, item_id: &str) {
     });
 }
 
-/// Decodifica una petición `read` (lado servidor) → lista de (domainId, itemId).
-pub fn decode_request(service_tlv: &Tlv<'_>) -> Result<Vec<(String, String)>, MmsError> {
+/// Escribe un `read` de un **dataset por nombre** (`variableListName`), la forma
+/// que usan los clientes para `readDataSetValues`.
+pub fn write_data_set_request(w: &mut BerWriter, domain_id: &str, list_name: &str) {
+    w.tlv(service::READ, |w| {
+        // variableAccessSpecification [1] → variableListName [1] → domain-specific [1]
+        w.tlv(Tag::context(1, true), |w| {
+            w.tlv(Tag::context(1, true), |w| {
+                w.tlv(Tag::context(1, true), |w| {
+                    w.visible_string(universal::VISIBLE_STRING, domain_id);
+                    w.visible_string(universal::VISIBLE_STRING, list_name);
+                });
+            });
+        });
+    });
+}
+
+/// Lo que una petición `read` quiere leer (el CHOICE `VariableAccessSpecification`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadTarget {
+    /// `listOfVariable [0]`: lista explícita de `(domainId, itemId)`.
+    Variables(Vec<(String, String)>),
+    /// `variableListName [1]`: un dataset nombrado `(domainId, listName)`.
+    NamedList(String, String),
+}
+
+/// Decodifica una petición `read` (lado servidor).
+///
+/// Soporta las dos alternativas de `VariableAccessSpecification`: `listOfVariable`
+/// (lectura de variables sueltas) y `variableListName` (lectura de un dataset por
+/// nombre, que usan clientes como libiec61850 en `readDataSetValues`).
+pub fn decode_request(service_tlv: &Tlv<'_>) -> Result<ReadTarget, MmsError> {
     let content = pdu::expect_service(service_tlv, service::READ)?;
     let mut r = BerReader::new(content);
     // specificationWithResult [0] BOOLEAN (primitivo) OPTIONAL → ignorar si está
     let _ = r.read_if(Tag::context(0, false))?;
-    // variableAccessSpecification: listOfVariable [0] (constructed)
-    let lov = r.expect(Tag::context(0, true))?;
-    pdu::parse_list_of_variable(lov)
+    // variableAccessSpecification [1] → CHOICE { listOfVariable [0], variableListName [1] }
+    let vas = r.expect(Tag::context(1, true))?;
+    let mut vr = BerReader::new(vas);
+    let choice = vr.read_tlv()?;
+    match choice.tag {
+        t if t == Tag::context(0, true) => Ok(ReadTarget::Variables(pdu::parse_list_of_variable(
+            choice.content,
+        )?)),
+        t if t == Tag::context(1, true) => {
+            // variableListName [1] ObjectName → domain-specific [1] { domainId, itemId }
+            let mut nr = BerReader::new(choice.content);
+            let ds = nr.expect(Tag::context(1, true))?;
+            let mut dr = BerReader::new(ds);
+            let domain =
+                crate::ber::prim::decode_visible_string(dr.expect(universal::VISIBLE_STRING)?)?
+                    .to_string();
+            let name =
+                crate::ber::prim::decode_visible_string(dr.expect(universal::VISIBLE_STRING)?)?
+                    .to_string();
+            Ok(ReadTarget::NamedList(domain, name))
+        }
+        _ => Err(MmsError::UnexpectedPdu),
+    }
 }
 
 /// Codifica una respuesta `read` (lado servidor).
@@ -105,18 +162,80 @@ mod tests {
         let mut w = BerWriter::new();
         write_request(&mut w, "IED1LD0", "LLN0$ST$Mod$stVal");
         let bytes = w.into_bytes();
-        // estructura: A4 { A0 { 30 { A0 { A1 { 1A "IED1LD0", 1A "LLN0$ST$Mod$stVal" } } } } }
+        // Estructura CONFORME (verificada contra libiec61850):
+        // A4 read { A1 varAccessSpec { A0 listOfVariable { 30 seq {
+        //   A0 name { A1 domainSpecific { 1A "IED1LD0", 1A "LLN0$ST$Mod$stVal" }}}}}}
         assert_eq!(bytes[0], 0xA4);
-        // contiene domainId e itemId como VisibleString
         assert!(bytes.windows(7).any(|c| c == b"IED1LD0"));
         assert!(bytes.windows(17).any(|c| c == b"LLN0$ST$Mod$stVal"));
-        // verifica el anidamiento de tags al principio del cuerpo
+
+        // Guardián de regresión del bug de interop: el variableAccessSpecification
+        // DEBE ir envuelto en [1] antes del listOfVariable [0]. Sin este wrapper,
+        // un stack conforme (libiec61850) rechaza el Read con reject-PDU.
         let mut r = BerReader::new(&bytes);
         let read = r.read_tlv().unwrap();
         assert_eq!(read.tag, service::READ);
         let mut rr = read.reader();
-        let lov = rr.read_tlv().unwrap();
-        assert_eq!(lov.tag, Tag::context(0, true));
+        let vas = rr.read_tlv().unwrap();
+        assert_eq!(
+            vas.tag,
+            Tag::context(1, true),
+            "variableAccessSpecification debe ser [1]"
+        );
+        let mut vr = vas.reader();
+        let lov = vr.read_tlv().unwrap();
+        assert_eq!(
+            lov.tag,
+            Tag::context(0, true),
+            "listOfVariable debe ser [0] dentro de [1]"
+        );
+
+        // Y round-trip con nuestro propio decodificador de servidor.
+        let service = Tlv {
+            tag: service::READ,
+            content: &bytes[read_header_len(&bytes)..],
+        };
+        let target = decode_request(&service).unwrap();
+        assert_eq!(
+            target,
+            ReadTarget::Variables(vec![(
+                "IED1LD0".to_string(),
+                "LLN0$ST$Mod$stVal".to_string()
+            )])
+        );
+    }
+
+    #[test]
+    fn request_named_list_dataset() {
+        // variableAccessSpecification [1] { variableListName [1] { domain-specific } }
+        // como envía readDataSetValues de libiec61850.
+        let mut w = BerWriter::new();
+        w.tlv(service::READ, |w| {
+            w.boolean(Tag::context(0, false), true); // specificationWithResult
+            w.tlv(Tag::context(1, true), |w| {
+                w.tlv(Tag::context(1, true), |w| {
+                    w.tlv(Tag::context(1, true), |w| {
+                        w.visible_string(universal::VISIBLE_STRING, "IED1LD0");
+                        w.visible_string(universal::VISIBLE_STRING, "LLN0$Events");
+                    });
+                });
+            });
+        });
+        let bytes = w.into_bytes();
+        let mut r = BerReader::new(&bytes);
+        let svc = r.read_tlv().unwrap();
+        assert_eq!(
+            decode_request(&svc).unwrap(),
+            ReadTarget::NamedList("IED1LD0".to_string(), "LLN0$Events".to_string())
+        );
+    }
+
+    /// Longitud de la cabecera TLV (tag + length) del Read para localizar su
+    /// contenido en el test anterior.
+    fn read_header_len(bytes: &[u8]) -> usize {
+        let mut r = BerReader::new(bytes);
+        let tlv = r.read_tlv().unwrap();
+        bytes.len() - tlv.content.len()
     }
 
     #[test]

@@ -12,7 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [package.metadata.docs.rs]
-features = ["client", "server", "tls"]
+features = ["client", "server", "tls", "tokens"]
 
 [features]
 default = []
@@ -24,10 +24,16 @@ server = ["dep:tokio"]
 # TLS de transporte (IEC 62351-3) con rustls. Opcional: sin esta feature no se
 # añade ninguna dependencia nueva ni cambia el comportamiento en claro.
 tls = ["dep:tokio-rustls"]
+# Access tokens firmados para RBAC (IEC 62351-8): reutiliza las primitivas de
+# firma (HMAC-SHA256 / ECDSA P-256) de iec61850-l2, que aloja la criptografía
+# compartida del proyecto. Implica `server` (usa el tipo `Role` del RBAC del
+# servidor). Solo entra la dependencia con esta feature.
+tokens = ["dep:iec61850-l2", "server"]
 
 [dependencies]
 iec61850-ber = { workspace = true }
 iec61850-model = { workspace = true }
+iec61850-l2 = { workspace = true, features = ["ecdsa"], optional = true }
 thiserror = { workspace = true }
 tokio = { version = "1", features = ["net", "io-util", "macros", "rt", "sync", "time"], optional = true }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"], optional = true }
@@ -49,3 +55,6 @@ required-features = ["client"]
 [[example]]
 name = "ied_sim"
 required-features = ["server"]
+
+[lints]
+workspace = true

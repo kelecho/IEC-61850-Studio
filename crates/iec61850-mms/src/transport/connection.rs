@@ -124,6 +124,23 @@ impl IsoConnection {
         })
     }
 
+    /// Devuelve el primer certificado (DER) que el **peer** presentó en el
+    /// handshake TLS, si lo hubo (mTLS). En el lado servidor es el certificado
+    /// del cliente; base de la autenticación por certificado (IEC 62351-4/8).
+    #[cfg(feature = "tls")]
+    pub fn peer_certificate(&self) -> Option<Vec<u8>> {
+        let MaybeTlsStream::Tls(s) = &self.stream else {
+            return None;
+        };
+        let conn = match s.as_ref() {
+            tokio_rustls::TlsStream::Server(tls) => tls.get_ref().1,
+            tokio_rustls::TlsStream::Client(_) => return None,
+        };
+        conn.peer_certificates()?
+            .first()
+            .map(|c| c.as_ref().to_vec())
+    }
+
     /// Envía un payload (TPDU COTP) enmarcado en TPKT.
     pub async fn send(&mut self, payload: &[u8]) -> Result<(), MmsError> {
         let frame = tpkt::frame(payload);

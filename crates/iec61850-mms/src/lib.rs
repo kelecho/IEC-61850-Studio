@@ -37,10 +37,23 @@ pub use mms::{
 pub use client::MmsClient;
 
 #[cfg(feature = "server")]
-pub use server::{MmsServer, ServerHandle, ServerModel, Store};
+pub use server::{
+    AuthPolicy, MmsServer, Permissions, Role, ServerHandle, ServerLimits, ServerModel, Store,
+};
+
+/// Access tokens firmados (RBAC, IEC 62351-8) y las primitivas de firma
+/// (re-exportadas de [`iec61850_l2`], la criptografía compartida del proyecto).
+#[cfg(feature = "tokens")]
+pub use iec61850_l2::{EcdsaSigner, EcdsaVerifier, HmacKey, Signer, Verifier};
+#[cfg(feature = "tokens")]
+pub use mms::{AccessToken, TokenError, token};
 
 #[cfg(all(feature = "tls", any(feature = "client", feature = "server")))]
 pub use tokio_rustls::{TlsAcceptor, TlsConnector};
 /// Configuración TLS de transporte (mTLS, IEC 62351-3).
 #[cfg(all(feature = "tls", any(feature = "client", feature = "server")))]
-pub use transport::tls::{TlsClientOptions, TlsServerOptions, certs_from_pem, key_from_pem};
+pub use transport::tls::{
+    CertStatus, CrlInfo, OcspResponse, OcspSingleResponse, PkiError, RevocationSource,
+    TlsClientOptions, TlsServerOptions, cert_common_name, cert_serial_number, cert_validity,
+    certs_from_pem, key_from_pem, parse_crl, parse_ocsp_response, validate_certificate,
+};

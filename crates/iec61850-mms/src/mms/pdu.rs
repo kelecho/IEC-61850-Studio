@@ -32,9 +32,20 @@ pub mod service {
     pub const READ: Tag = Tag::context(4, true);
     pub const WRITE: Tag = Tag::context(5, true);
     pub const GET_VARIABLE_ACCESS_ATTRIBUTES: Tag = Tag::context(6, true);
+    // Datasets dinámicos (MMS named variable lists, IEC 61850-8-1 Ed.2).
+    pub const DEFINE_NAMED_VARIABLE_LIST: Tag = Tag::context(11, true);
+    /// La **respuesta** de DefineNamedVariableList es `NULL` → tag [11] primitivo.
+    pub const DEFINE_NAMED_VARIABLE_LIST_RESPONSE: Tag = Tag::context(11, false);
+    pub const DELETE_NAMED_VARIABLE_LIST: Tag = Tag::context(12, true);
+    pub const GET_NAMED_VARIABLE_LIST_ATTRIBUTES: Tag = Tag::context(13, true);
+    /// ReadJournal (logs, ISO 9506): tag `[65]` constructed (multi-byte `bf 41`).
+    pub const READ_JOURNAL: Tag = Tag::context(65, true);
     // Servicios de transferencia de ficheros (tags altos, multi-byte).
     pub const FILE_OPEN: Tag = Tag::context(72, true);
+    /// fileRead: la **petición** es primitiva (Integer32 = frsmID); la
+    /// **respuesta** es constructed (`SEQUENCE { fileData, moreFollows }`).
     pub const FILE_READ: Tag = Tag::context(73, false);
+    pub const FILE_READ_RESPONSE: Tag = Tag::context(73, true);
     pub const FILE_CLOSE: Tag = Tag::context(74, false);
     pub const FILE_DIRECTORY: Tag = Tag::context(77, true);
 }
