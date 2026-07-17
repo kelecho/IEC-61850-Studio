@@ -36,6 +36,10 @@
             <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
               <TrgOps dchg="true"/>
             </ReportControl>
+            <SettingControl desc="grupos de ajuste" numOfSGs="3" actSG="1"/>
+            <LogControl name="EventLog" datSet="ds1" logName="EventLog" logEna="true">
+              <TrgOps dchg="true" qchg="true"/>
+            </LogControl>
             <DOI name="Mod">
               <DAI name="stVal">
                 <Val>on</Val>
@@ -62,6 +66,13 @@
               </DAI>
             </DOI>
           </LN>
+          <LN prefix="" lnClass="PTOC" inst="1" lnType="PTOC_0">
+            <DOI name="StrVal">
+              <DAI name="setVal">
+                <Val>10</Val>
+              </DAI>
+            </DOI>
+          </LN>
         </LDevice>
       </Server>
     </AccessPoint>
@@ -79,6 +90,9 @@
       <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
       <DO name="SPCSO2" type="SPC_0"/>
     </LNodeType>
+    <LNodeType id="PTOC_0" lnClass="PTOC">
+      <DO name="StrVal" type="ING_0" desc="Ajuste de arranque (setting group)"/>
+    </LNodeType>
 
     <DOType id="INC_0" cdc="INC">
       <DA name="stVal" bType="Enum" type="Beh" fc="ST" dchg="true" desc="Valor de estado"/>
@@ -93,6 +107,9 @@
     </DOType>
     <DOType id="WYE_0" cdc="WYE">
       <DA name="phsA" bType="Struct" type="CMV_0" fc="MX" dchg="true" desc="Fase A"/>
+    </DOType>
+    <DOType id="ING_0" cdc="ING">
+      <DA name="setVal" bType="INT32" fc="SG" desc="Valor de ajuste por grupo"/>
     </DOType>
     <DOType id="SPC_0" cdc="SPC">
       <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>

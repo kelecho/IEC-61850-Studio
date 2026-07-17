@@ -67,6 +67,38 @@ pub struct TrgOps {
     pub gi: Option<bool>,
 }
 
+/// `<LogControl>`: bloque de control de log (LCB). Controla el registro
+/// persistente de eventos de un dataset en un `Log`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LogControl {
+    #[serde(rename = "@name")]
+    pub name: String,
+    #[serde(rename = "@datSet")]
+    pub dat_set: Option<String>,
+    #[serde(rename = "@logName")]
+    pub log_name: Option<String>,
+    #[serde(rename = "@logEna")]
+    pub log_ena: Option<bool>,
+    #[serde(rename = "@intgPd")]
+    pub intg_pd: Option<u32>,
+    #[serde(rename = "TrgOps")]
+    pub trg_ops: Option<TrgOps>,
+}
+
+/// `<SettingControl>`: bloque de control de grupos de ajustes (SGCB), en LN0.
+/// Define cuántos grupos de ajustes hay y cuál está activo por defecto.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SettingControl {
+    #[serde(rename = "@desc")]
+    pub desc: Option<String>,
+    #[serde(rename = "@numOfSGs")]
+    pub num_of_sgs: u32,
+    #[serde(rename = "@actSG")]
+    pub act_sg: Option<u32>,
+    #[serde(rename = "@resvTms")]
+    pub resv_tms: Option<u32>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GseControl {
     #[serde(rename = "@name")]

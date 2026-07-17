@@ -134,10 +134,11 @@ impl Resolver<'_> {
             }
         }
 
-        let ln_desc = ln
-            .desc
-            .clone()
-            .or_else(|| self.templates.lnode_type(&ln.ln_type).and_then(|l| l.desc.clone()));
+        let ln_desc = ln.desc.clone().or_else(|| {
+            self.templates
+                .lnode_type(&ln.ln_type)
+                .and_then(|l| l.desc.clone())
+        });
         LogicalNode {
             prefix: ln.prefix.clone(),
             class: ln.ln_class.clone(),
@@ -150,6 +151,23 @@ impl Resolver<'_> {
                 .report_controls
                 .iter()
                 .map(convert_report_control)
+                .collect(),
+            setting_group_control: ln.setting_control.as_ref().map(|sc| {
+                iec61850_model::SettingGroupControl {
+                    num_of_sgs: sc.num_of_sgs,
+                    act_sg: sc.act_sg.unwrap_or(1),
+                    resv_tms: sc.resv_tms.is_some(),
+                }
+            }),
+            log_controls: ln
+                .log_controls
+                .iter()
+                .map(|lc| iec61850_model::LogControlBlock {
+                    name: lc.name.clone(),
+                    dataset: lc.dat_set.clone().filter(|s| !s.is_empty()),
+                    log_name: lc.log_name.clone().filter(|s| !s.is_empty()),
+                    log_ena: lc.log_ena.unwrap_or(false),
+                })
                 .collect(),
         }
     }
@@ -178,7 +196,9 @@ impl Resolver<'_> {
 
         let mut sub_objects = Vec::new();
         for sdo in &dotype.sdos {
-            if let Some(sub) = self.resolve_do(&sdo.name, &sdo.kind, false, sdo.desc.clone(), location) {
+            if let Some(sub) =
+                self.resolve_do(&sdo.name, &sdo.kind, false, sdo.desc.clone(), location)
+            {
                 sub_objects.push(sub);
             }
         }
@@ -241,10 +261,23 @@ impl Resolver<'_> {
         location: &str,
     ) -> DataAttribute {
         let basic_type = BasicType::from_btype(b_type);
-        let enum_type = if matches!(basic_type, BasicType::Enum) {
-            type_ref.map(str::to_string)
+        let (enum_type, enum_values) = if matches!(basic_type, BasicType::Enum) {
+            // Conserva la tabla ordinal↔literal del EnumType referenciado.
+            let values = type_ref
+                .and_then(|id| self.templates.enum_type(id))
+                .map(|et| {
+                    et.values
+                        .iter()
+                        .map(|ev| iec61850_model::EnumValue {
+                            ord: ev.ord,
+                            literal: ev.text.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            (type_ref.map(str::to_string), values)
         } else {
-            None
+            (None, Vec::new())
         };
 
         let mut children = Vec::new();
@@ -283,6 +316,7 @@ impl Resolver<'_> {
             basic_type,
             desc,
             enum_type,
+            enum_values,
             trigger_options,
             value: val.map(to_value),
             children,

@@ -19,8 +19,8 @@ fn parses_ast() {
     assert_eq!(doc.header.as_ref().unwrap().id, "EJEMPLO_SIMPLE");
 
     let dtt = doc.data_type_templates.as_ref().expect("tiene plantillas");
-    assert_eq!(dtt.lnode_types.len(), 3);
-    assert_eq!(dtt.do_types.len(), 4);
+    assert_eq!(dtt.lnode_types.len(), 4);
+    assert_eq!(dtt.do_types.len(), 5);
     assert_eq!(dtt.da_types.len(), 4);
     assert_eq!(dtt.enum_types.len(), 2);
 
@@ -66,6 +66,91 @@ fn resolves_enum_attribute_with_default_value() {
     assert!(da.trigger_options.dchg);
     // Valor superpuesto desde el DAI.
     assert_eq!(da.value.as_ref().map(|v| v.raw.as_str()), Some("on"));
+
+    // Fidelidad SCL: la tabla ordinal↔literal del EnumType `Beh` se conserva.
+    assert_eq!(da.enum_values.len(), 5, "Beh tiene 5 valores");
+    assert_eq!(da.enum_literal(1), Some("on"));
+    assert_eq!(da.enum_literal(2), Some("blocked"));
+    assert_eq!(da.enum_literal(5), Some("off"));
+    assert_eq!(da.enum_literal(99), None);
+    assert_eq!(da.enum_ordinal("on"), Some(1));
+    assert_eq!(da.enum_ordinal("off"), Some(5));
+    assert_eq!(da.enum_ordinal("inexistente"), None);
+}
+
+/// Regresión de interoperabilidad: los SCL reales de muchas herramientas
+/// intercalan elementos del mismo nombre (LN0 entre LN; DOType/DAType no
+/// agrupados). El parser debe aceptarlos igualmente. Hallado auditando ficheros
+/// de terceros con `examples/scl_audit`.
+#[test]
+fn parses_interleaved_elements() {
+    let doc = parse_scl_file(fixture("fixtures/icd/interleaved.icd"))
+        .expect("parsea pese al orden intercalado");
+
+    // LN0 estaba entre dos LN: debe reconocerse como LN0 y no perder ningún LN.
+    let ld = &doc.ieds[0].access_points[0]
+        .server
+        .as_ref()
+        .unwrap()
+        .ldevices[0];
+    assert!(ld.ln0.is_some(), "LN0 intercalado debe capturarse");
+    assert_eq!(ld.lns.len(), 2, "ambos LN deben conservarse");
+
+    // Plantillas intercaladas: los 3 LNodeType, 3 DOType, 1 DAType, 1 EnumType.
+    let dtt = doc.data_type_templates.as_ref().unwrap();
+    assert_eq!(dtt.lnode_types.len(), 3);
+    assert_eq!(dtt.do_types.len(), 3);
+    assert_eq!(dtt.da_types.len(), 1);
+    assert_eq!(dtt.enum_types.len(), 1);
+
+    // Y resuelve sin errores.
+    let (_model, diags) = doc.resolve_lenient();
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+    assert!(errors.is_empty(), "resolución sin errores: {errors:?}");
+}
+
+/// Round-trip de escritura (3.4): parsear → serializar → re-parsear debe dar un
+/// modelo resuelto equivalente (sin pérdida semántica en los elementos soportados).
+#[test]
+fn scl_write_round_trip() {
+    let doc = parse_scl_file(fixture("fixtures/icd/simple.icd")).expect("parsea original");
+    let model1 = doc.clone().resolve().expect("resuelve original");
+
+    // Serializa y vuelve a parsear.
+    let xml = iec61850_scl::write_scl_str(&doc).expect("serializa");
+    let doc2 = iec61850_scl::parse_scl_str(&xml).expect("re-parsea el XML generado");
+    let model2 = doc2.resolve().expect("resuelve el re-parseado");
+
+    // El namespace, IEDs y plantillas se conservan.
+    assert_eq!(doc2.ieds.len(), 1);
+    assert_eq!(doc2.ieds[0].name, "IED1");
+    let dtt = doc2.data_type_templates.as_ref().unwrap();
+    assert_eq!(dtt.enum_types.len(), 2);
+
+    // Un valor de enum y uno flotante sobreviven al round-trip.
+    let stval1 = model1.find("IED1LD0/LLN0.Mod.stVal").unwrap();
+    let stval2 = model2.find("IED1LD0/LLN0.Mod.stVal").unwrap();
+    let (NodeRef::DataAttribute(a), NodeRef::DataAttribute(b)) = (stval1, stval2) else {
+        panic!("se esperaban DataAttribute");
+    };
+    assert_eq!(
+        a.value.as_ref().map(|v| &v.raw),
+        b.value.as_ref().map(|v| &v.raw)
+    );
+    assert_eq!(a.enum_values, b.enum_values, "la tabla de enum sobrevive");
+
+    let f1 = model1.find("IED1LD0/MMXU1.A.phsA.cVal.mag.f").unwrap();
+    let f2 = model2.find("IED1LD0/MMXU1.A.phsA.cVal.mag.f").unwrap();
+    let (NodeRef::DataAttribute(fa), NodeRef::DataAttribute(fb)) = (f1, f2) else {
+        panic!("se esperaban DataAttribute");
+    };
+    assert_eq!(
+        fa.value.as_ref().and_then(|v| v.as_f64()),
+        fb.value.as_ref().and_then(|v| v.as_f64())
+    );
 }
 
 #[test]

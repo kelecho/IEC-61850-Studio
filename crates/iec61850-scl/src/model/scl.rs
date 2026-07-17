@@ -31,6 +31,16 @@ impl SclDocument {
     pub fn ied(&self, name: &str) -> Option<&Ied> {
         self.ieds.iter().find(|i| i.name == name)
     }
+
+    /// ¿El documento no aportó ninguna sección? Señal de que el XML no casó con el
+    /// esquema esperado (p. ej. elementos con prefijo de namespace sin resolver).
+    pub fn is_empty(&self) -> bool {
+        self.header.is_none()
+            && self.substations.is_empty()
+            && self.communication.is_none()
+            && self.ieds.is_empty()
+            && self.data_type_templates.is_none()
+    }
 }
 
 /// Cabecera del SCL (`<Header>`).

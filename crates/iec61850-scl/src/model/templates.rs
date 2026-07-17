@@ -9,15 +9,50 @@ use serde::Deserialize;
 use super::instance::Val;
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(from = "RawTemplates")]
 pub struct DataTypeTemplates {
-    #[serde(rename = "LNodeType", default)]
     pub lnode_types: Vec<LNodeType>,
-    #[serde(rename = "DOType", default)]
     pub do_types: Vec<DOType>,
-    #[serde(rename = "DAType", default)]
     pub da_types: Vec<DAType>,
-    #[serde(rename = "EnumType", default)]
     pub enum_types: Vec<EnumType>,
+}
+
+/// Representación de deserialización que preserva el **orden de aparición** de
+/// los hijos. Necesaria porque quick-xml/serde exige que los elementos del mismo
+/// nombre sean consecutivos, mientras que los SCL reales de muchas herramientas
+/// **intercalan** `LNodeType`/`DOType`/`DAType`/`EnumType`. Capturarlos en un
+/// único `$value` con un enum admite cualquier orden.
+#[derive(Debug, Deserialize)]
+struct RawTemplates {
+    #[serde(rename = "$value", default)]
+    items: Vec<TemplateItem>,
+}
+
+#[derive(Debug, Deserialize)]
+enum TemplateItem {
+    LNodeType(LNodeType),
+    DOType(DOType),
+    DAType(DAType),
+    EnumType(EnumType),
+    /// Cualquier otro hijo (p. ej. `Private`) se ignora sin romper el parseo.
+    #[serde(other)]
+    Other,
+}
+
+impl From<RawTemplates> for DataTypeTemplates {
+    fn from(raw: RawTemplates) -> Self {
+        let mut t = DataTypeTemplates::default();
+        for item in raw.items {
+            match item {
+                TemplateItem::LNodeType(x) => t.lnode_types.push(x),
+                TemplateItem::DOType(x) => t.do_types.push(x),
+                TemplateItem::DAType(x) => t.da_types.push(x),
+                TemplateItem::EnumType(x) => t.enum_types.push(x),
+                TemplateItem::Other => {}
+            }
+        }
+        t
+    }
 }
 
 impl DataTypeTemplates {

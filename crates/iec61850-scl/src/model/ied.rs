@@ -3,7 +3,7 @@
 
 use serde::Deserialize;
 
-use super::control::{DataSet, GseControl, ReportControl, SmvControl};
+use super::control::{DataSet, GseControl, LogControl, ReportControl, SettingControl, SmvControl};
 use super::instance::Doi;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -35,18 +35,59 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawLDevice")]
 pub struct LDevice {
-    #[serde(rename = "@inst")]
     pub inst: String,
-    #[serde(rename = "@ldName")]
     pub ld_name: Option<String>,
-    #[serde(rename = "@desc")]
     pub desc: Option<String>,
     /// Nodo lógico cero (obligatorio en el estándar).
-    #[serde(rename = "LN0")]
     pub ln0: Option<Ln>,
-    #[serde(rename = "LN", default)]
     pub lns: Vec<Ln>,
+}
+
+/// Representación de deserialización que tolera un `LN0` **intercalado** entre
+/// los `LN` (habitual en SCL reales), que de otro modo rompería serde por
+/// "campos duplicados" al no ser los `LN` consecutivos.
+#[derive(Debug, Deserialize)]
+struct RawLDevice {
+    #[serde(rename = "@inst")]
+    inst: String,
+    #[serde(rename = "@ldName")]
+    ld_name: Option<String>,
+    #[serde(rename = "@desc")]
+    desc: Option<String>,
+    #[serde(rename = "$value", default)]
+    items: Vec<LDeviceItem>,
+}
+
+#[derive(Debug, Deserialize)]
+enum LDeviceItem {
+    LN0(Box<Ln>),
+    LN(Box<Ln>),
+    /// Otros hijos (`AccessControl`, `Private`, ...) se ignoran.
+    #[serde(other)]
+    Other,
+}
+
+impl From<RawLDevice> for LDevice {
+    fn from(raw: RawLDevice) -> Self {
+        let mut ln0 = None;
+        let mut lns = Vec::new();
+        for item in raw.items {
+            match item {
+                LDeviceItem::LN0(ln) => ln0 = Some(*ln),
+                LDeviceItem::LN(ln) => lns.push(*ln),
+                LDeviceItem::Other => {}
+            }
+        }
+        LDevice {
+            inst: raw.inst,
+            ld_name: raw.ld_name,
+            desc: raw.desc,
+            ln0,
+            lns,
+        }
+    }
 }
 
 impl LDevice {
@@ -78,6 +119,10 @@ pub struct Ln {
     pub gse_controls: Vec<GseControl>,
     #[serde(rename = "SampledValueControl", default)]
     pub smv_controls: Vec<SmvControl>,
+    #[serde(rename = "SettingControl")]
+    pub setting_control: Option<SettingControl>,
+    #[serde(rename = "LogControl", default)]
+    pub log_controls: Vec<LogControl>,
     #[serde(rename = "DOI", default)]
     pub dois: Vec<Doi>,
 }

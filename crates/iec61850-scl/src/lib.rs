@@ -26,10 +26,13 @@ pub mod error;
 pub mod model;
 pub mod parse;
 pub mod resolve;
+pub mod validate;
+pub mod write;
 
 pub use error::{Diagnostic, SclError, Severity};
 pub use model::{Header, SclDocument};
 pub use parse::{parse_scl_file, parse_scl_str};
+pub use write::{write_scl_file, write_scl_str};
 
 /// Conveniencia: parsea un archivo SCL y lo resuelve a un [`Model`] en un paso.
 ///

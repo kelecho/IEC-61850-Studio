@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture propio (no derivado de terceros) que reproduce el patrón de SCL
+     reales que rompía el parser: elementos del mismo nombre NO consecutivos.
+     - En LDevice: <LN0> aparece intercalado entre elementos <LN>.
+     - En DataTypeTemplates: DOType/DAType intercalados, no agrupados. -->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="INTERLEAVED" version="1" revision="" nameStructure="IEDName"/>
+  <IED name="IEDX" manufacturer="ACME">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN lnClass="LPHD" lnType="LPHD1" inst="1" prefix=""/>
+          <LN0 lnClass="LLN0" lnType="LLN01" inst=""/>
+          <LN lnClass="GGIO" lnType="GGIO1" inst="1" prefix="">
+            <DOI name="SPCSO1">
+              <DAI name="ctlVal"><Val>0</Val></DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN01" lnClass="LLN0">
+      <DO name="Mod" type="ENC_Mod"/>
+      <DO name="Beh" type="ENS_Beh"/>
+    </LNodeType>
+    <DOType id="ENC_Mod" cdc="ENC">
+      <DA name="stVal" bType="Enum" type="Mod_ENUM" fc="ST"/>
+      <DA name="q" bType="Quality" fc="ST"/>
+    </DOType>
+    <LNodeType id="LPHD1" lnClass="LPHD">
+      <DO name="PhyHealth" type="ENS_Beh"/>
+    </LNodeType>
+    <DAType id="Vector_DA">
+      <BDA name="mag" bType="FLOAT32"/>
+    </DAType>
+    <DOType id="ENS_Beh" cdc="ENS">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOType>
+    <LNodeType id="GGIO1" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_1"/>
+    </LNodeType>
+    <DOType id="SPC_1" cdc="SPC">
+      <DA name="ctlVal" bType="BOOLEAN" fc="CO"/>
+    </DOType>
+    <EnumType id="Mod_ENUM">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="2">off</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>
