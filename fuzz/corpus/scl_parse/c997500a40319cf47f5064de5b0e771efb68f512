@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_   <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="LLN0" lnInst="" doName="Mod" daName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+            <SampledValueControl name="smv          <P type="rv         <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
+            </DataSet>
+            <ReportControl name="rcb1" rptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchg="true"/>
+            </ReportControl>
+            <DOI name="Mod">
+              <DAI name="stVal">
+                <Val>on</Val>
+              </DAI>
+            </DOI>
+          </LN0>
+          <LN prefix="" lnClass="MMXU" inst="1" lnType="MMXU_0">
+            <DOI name="A">
+              <SDI name="phsA">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f">
+                      <Val>1.5</Val>
+                    </DAI>
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="SPCSO2">
+              <DAI name="ctlModel">
+                <Val>4</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0" desc="Modo del nodo lógico"/>
+      <DO name="Beh" type="INS_0" desc="Comportamiento"/>
+    </LNodeType>
+    <LNodeType id="MMXU_0" lnClass="MMXU">
+      <DO name="A" type="WYE_0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0"/>
+    </LNodeType>
+
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="Enum" type="Beh" fc="ST" e="Beh" type="INVLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" p(refix="" lnClass="LLN0" lnInst="" doName="Mod" daName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+          </LN0>
+    =   </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass="LLN0">
+      OD< name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

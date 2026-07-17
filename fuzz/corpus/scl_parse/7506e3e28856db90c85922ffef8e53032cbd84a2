@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.)ec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment narptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchgd="MMXU_0" lnClass="MMXU">
+      <DO name="@" type="WYE_0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0"/>
+    </LNodeType>
+
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="Enum" type="Beh" fc="ST" dchg="true" desc="Valor de estado2/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <DOTy0e id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">
+      <DA name="phsA" bType="Struct" ocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4"me="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+  <?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W      <Address>
+          <P type="IP"1">

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
+    </DOType>
+
+    <DAType id="SPCOper_0">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Time="LLN0_0">
+            <DataSet name="ds1">
+             a

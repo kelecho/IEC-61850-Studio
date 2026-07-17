@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+   <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  </Val>
+              </DAI>
+            </DOI>
+          </LN>
+    id="Vector_0">
+      <BDA name="mag"  desc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Ma%ca de tiempo"/>
+  numVal>
+     1<EnumVal ord="1">direcplates>
+</SCL>

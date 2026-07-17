@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.,ec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revi{ion="A"/>
+
+  <Communication>
+    <SubNetwork name="W0" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">196.168.1.10</P>
+  __________________________________________      </Address>
+        <GSE ldInst="LHMV @cbNameE_SV_EJEMPLO" version="1" revi{ion="A"/>
+="gcb01">
+     ITY">4</P><?GOOSE_SV_EJEMPLO" version="1" revision="
+    A "/ 

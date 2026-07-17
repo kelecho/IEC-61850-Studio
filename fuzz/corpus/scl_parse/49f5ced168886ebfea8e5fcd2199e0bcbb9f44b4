@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2002/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación deepem jlo">
+    <VoltageLevel name="V1">
+      <Bma ayne="B1">
+        <Conducting/LN0>
+          <LN prefix="" lnCtype="8-MMS" >  
+   -CD?-01-00-01</P>=
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VL" fc="ST" desc="Marca dpNe

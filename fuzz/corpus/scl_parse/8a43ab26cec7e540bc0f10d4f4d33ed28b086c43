@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S0" desc="Subestación de ejemplo">
+    <="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltagDispositivo lógico principal">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0"N0.rcb1" datSet="ds1" conev="1" buffered="false">
+              <TrgOps dchg="true" `qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb1" rptIDe id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0" desc="Modo del ntedA name="q" bType="QuaP iedName="IED1" ality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca dpNe

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED2" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.1'</P>
+        </Address>
+                 <P type="MAC-Address">01-0SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168*1.10</P>
+        </Address>
+                 <P type="MAC-Address">01-0C-CD-01-00-01</P>
+ <P type="VLAN-ID">064</P>
+            <P te="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+ z           <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITlnInstP>
+          </Address>
+        </SMV>
+      </C1onnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <Accessdress>
+          <P type="IP">192.168.1.1'</P>
+        </Address>
+                 <P type="MAC-Address">01-0SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168*1.10</P>
+        </Address>
+                 <P type="MAC-Address">01-0C-CD-01-00-01</P>
+ <P type="VLAN-ID">064</P>
+            <P te="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+ z           <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITlnInstP>
+          </Address>
+        </SMV>
+      </C1onnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <AccessPoint name=)AP1">
+      <Server>
+  erver>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass="LLN0">
+      <DO name="Mod" type="INPoint name=)AP1">
+      <Server>
+  erver>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

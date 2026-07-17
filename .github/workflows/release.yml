@@ -1,0 +1,42 @@
+name: Release
+
+# Al empujar un tag v* se genera el SBOM (CycloneDX) de cada crate publicable,
+# checksums, y se adjunta todo a la GitHub Release del tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  sbom:
+    name: SBOM + checksums
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-cyclonedx
+      - name: Generar SBOM CycloneDX (JSON, por crate)
+        run: |
+          cargo cyclonedx --format json --spec-version 1.5 \
+            --describe crate --all-features
+          mkdir -p dist
+          find crates -name "*.cdx.json" -exec cp {} dist/ \;
+      - name: Checksums
+        run: |
+          cp Cargo.lock dist/
+          cd dist && sha256sum * > SHA256SUMS
+      - name: Verificación previa (tests con todas las features)
+        run: >-
+          cargo test --features "iec61850/config iec61850/mms iec61850/mms-server
+          iec61850/mms-tls iec61850/goose-net iec61850/sv-net iec61850/serde
+          iec61850-mms/client iec61850-mms/server iec61850-mms/tls
+          iec61850-goose/net iec61850-sv/net iec61850-l2/net"
+      - name: Adjuntar a la release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

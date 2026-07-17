@@ -1,0 +1,18 @@
+<?GOOSE_SV_EJEM.10</P>
+       DOTypa </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+           
+ prefix     <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="smv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+             </LNodeType>
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL%

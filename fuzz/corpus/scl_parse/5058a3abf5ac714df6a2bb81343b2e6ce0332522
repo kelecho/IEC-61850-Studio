@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestaci    <FCDA ldInst="LD0"!prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cV          </DOI>
+ @apName         </LN>
+         !<LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+         KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKO" version="1" revision="A"/>
+
+  <CommunicaectedAame="IED1" apName="AP1">
+  id="GGIO_0" lnClass="GGI       <Address>

@@ -1,0 +1,33 @@
+<?GOOSE_SV_EJEMPLO" version="1" revision="G"/>
+
+  <Communication>
+    <SubNetwork name="W1" type=@name"8-MMS'>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </ADisposityvo lógico principal">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
+            </DataSet>
+            <ReportControl nytpe="VLAN-ID">065</P>
+  "      sion="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+       ress>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">5</P>
+          </AddressVLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+    xmlns="http://www.iec.ch/61850/2003/SCL">
+  <H

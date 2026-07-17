@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"     </SMV>
+      </ConnectedAP>
+    </SubNetwork?>
+<SCL xmlns="http://www.iec.c(/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1">
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID"400>0</P>
+            <P type="VLN"I-A>D065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" m apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</VLAN-PRI     </Con="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl na<DOType id="ItaTypeTemplates>
+</SCL>

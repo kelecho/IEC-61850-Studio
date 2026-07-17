@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL/">
+  <Header id="EJEMPLO_SIMPLE" version="1" xmlnsrevision="A" toolID="iec6185rcb1" d*atSet="ds1" confRev="dchg1" buffered="false">
+              <TrgOps dchg="true" qchg=">
+        >
+   tes>
+</SCL>

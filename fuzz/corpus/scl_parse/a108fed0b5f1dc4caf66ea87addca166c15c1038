@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-4"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+      <BDA name="ctlNum" bType="MNT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+    </DAType>
+    <DAType id="CMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType="Timestamp"/>
+    </DAType>
+    <DAType id="Vectkr_0">
+      <BDA name="mag" bType="S"tcrut type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+
+    <EnumType id="Beh">
+ ">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType="Timestamp"/>
+    </DAType>
+    <DAType iame="IED1" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <AuthenticatiOn/>
+DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Sub
+      <DA name="phsA" bType="station name=Stru"S1" ct"d

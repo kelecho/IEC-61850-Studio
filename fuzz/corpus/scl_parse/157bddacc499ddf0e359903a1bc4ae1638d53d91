@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P> 
+         <P type="IP-SUBNET">255.255.255.0</P>
+        </<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <vision="A"/>
+
+  <CommuniAddress>cation>
+    <SubNetwork name="
+      </ConnectedAP>
+    </SubNet

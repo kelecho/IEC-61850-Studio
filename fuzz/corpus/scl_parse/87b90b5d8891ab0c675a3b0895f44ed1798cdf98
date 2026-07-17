@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://wSCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnecName="IED1" apName="AP1">
+       <P type="IP">191.168.1.10</P>
+  <?xml veroins="1.0"ommunication>
+    <SubNetwork name="W1" type=8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+       <P type="IP">192.168.1.10</P>
+  <?xml version="1.0 encoding="UTF      </Address-8"?>
+<SCL xmlns="http>
+   ww.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+       <P type="IP">192.168.1.10</P>
+  <?xml version="1.0"ommunication>
+    <SubNetwork name="W1" type=8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+    version="1.0"ommunication>
+    <SubNetwork name="W1" type=8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+       <P type="IP">192.168.1.10</P>
+  <?xml version="@prefix1.0 encoding="UTF      </Address-8"?>
+<SCL xmlns="http>
+   ww.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+       <P type="IP">192.168.1.10</P>
+  <?xml version="1.0"ommunication>
+    <SubLetwork name=   <P type="IP">192.168.1.10</P>
+  <?xml version="1.0 encoding="UTF      </Address-8"?>
+<SCL xmlns="http>
+        <GSE ldIn:

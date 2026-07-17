@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL buffe="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">    <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type=~"APPID">0001</P>
+            <P type="VLANconfR-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+	  </ConnectedAP>
+    </Ss1">
+              <FCDA ldInst="LD0" prefix="" ln
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass    <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

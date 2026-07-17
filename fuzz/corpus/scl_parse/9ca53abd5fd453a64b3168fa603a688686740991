@@ -1,0 +1,8 @@
+<?xml version="1.0" encoging="UTF-8"?>
+<SCL xmlns="http://www.iec.ch2003/SCL">
+  <Header id="GOOSE_   <AccessPoint name="AP1">
+      <Server>
+        <LDevicelass="LLN0" in          <DataSet name="dsD0" p(refix="" lnClass="LLN0" lnInst="" doNade="Mod" daName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+   />         <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="MUCL>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61,Server850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" v<?xml MP"= revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+   -0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV lnInst="LD0" cbName="kmV01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+           <P type="VLAN-PRIORIYT">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED"1" smvID="MU01"/>
+          </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++=+++++++++++++++++++figVersion="1.0">
+    <AccessPoint " type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

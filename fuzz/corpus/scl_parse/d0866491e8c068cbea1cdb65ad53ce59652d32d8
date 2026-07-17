@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header dd="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec6DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lame="Beh" type="INS_0" desc="Comportamiento"/>
+    </LNodeType>
+    <LNodeTy!peDAI>
+     0      </DOI>
+          </LN0>
+          <LN prefix="" lnClass="MMXU" inst="1" lnType="?
+</SCL>

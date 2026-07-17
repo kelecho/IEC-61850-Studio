@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2023/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" versinn="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork nam/////////="W1" type="8-MMS">
+      -CD-01-00-01<  /> =P
+         <P type="APPID"1-00-01<  /> =P
+         <P type="APPID">DataTypeTem
+slp>aet</SCL>

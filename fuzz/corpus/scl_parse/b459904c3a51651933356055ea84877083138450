@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <@xmlns id="GOOSE_SV_EJEMPLO" versinn="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED0" apName="  id="LLN0_0" lnClass="LLN0">
+      <DO name="Mo'd" type="INC_0"/>
+  r </Lpa>
+  </DataTypeTemplates>
+</SCL>

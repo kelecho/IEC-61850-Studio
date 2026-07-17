@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <@xmlnsHeader id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA!" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME" c/nfigVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0" desc="Dispositivo lógame="Mod" type="INC_0" desc="Modo del nodo lógico"/>
+      <DO name="Beh" type="INS_0" desc="tlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

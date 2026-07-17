@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="" 1revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+ <?xml vCL xmlns="http://www.iec.ch/61850/2003/Sqchg
+  <Header id=tp://t="" lnType="LLN0_0">
+            <DataSet name="ds1">
+         </ReportControl>
+            <DO.ch/61850/2003/SCI name="Mod">
+L">
+u    b

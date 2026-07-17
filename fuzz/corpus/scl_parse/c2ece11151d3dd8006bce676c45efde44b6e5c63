@@ -1,0 +1,5 @@
+<?xml version="1.0" encoging="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_   <AccessPoint name="AP1">
+      <Server>
+        <LDevicelass="LLN0" inst="" lnValueControl name="smv01" datSet="ds1" confRev="1" smvID="MUCL>

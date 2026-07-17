@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.chec.ch/61850/2003/SCL">
+  <Header id="EJEMxchgSIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+   <Vo<LN0 lnClass="LLN0" insType>
+    <DOType id="SPC_0" cdc=SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"Val>
+    </EnumType>
+  </DataTypeTemplates>
+</

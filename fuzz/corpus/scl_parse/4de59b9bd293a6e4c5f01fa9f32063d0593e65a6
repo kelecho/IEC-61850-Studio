@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Heaevision="A" toolID="iec61850I-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel n;ame="V1">
+      <Bay name="B1">
+     st="LD0" cbName="gcb01">
+          <Address>
+   <P type="APPID">0001<

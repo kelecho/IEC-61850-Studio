@@ -1,0 +1,5 @@
+<?GOOSE_SV_EJEM <DOType id="INC_0" cdc="INC">
+      <DA name="stlnInstVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL>

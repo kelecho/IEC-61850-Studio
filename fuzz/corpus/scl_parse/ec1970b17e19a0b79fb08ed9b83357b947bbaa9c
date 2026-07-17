@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName=""1DEI apName="AP1">
+        <Address>
+<?xml version="1.0" encoding="UTF-8"          <P type="IP">192.168.1.10</P>
+        </Address>
+        < revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+         <P type=    <"

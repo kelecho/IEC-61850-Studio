@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlxchgns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" tolID="iec61850-rs"/>
+
+  <Substation name="S1" descnication>&
+  <IED name="IED1" type="GericIED" manufacturer="ACME" configVersion="1.0">
+    <Acce   01

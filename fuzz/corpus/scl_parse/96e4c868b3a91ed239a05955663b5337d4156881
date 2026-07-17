@@ -1,0 +1,125 @@
+<?GOOSE_SV_EJEMPLO" version="1" revision="G"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS'>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">02-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="smv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+         sion="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="smv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">5</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+  <?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+confRev="1" smvID="MU0  </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <AccessPoint na     </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="   <P type="VLAN-PRIORITY">5</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+TypeTemp  </DataTypeTem
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+la
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+plates>
+</SCL>t
+es>
+</SCL>

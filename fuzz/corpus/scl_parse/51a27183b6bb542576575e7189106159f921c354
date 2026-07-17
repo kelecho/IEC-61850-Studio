@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+      <Address>
+             <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f">
+                      <Val>1.5</Val>
+                    </DAI>
+                  </SDI>
+          smv01">
+          <Address>
+            <P type="MAC,Address">00-0C-CD-04-00-t name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+           <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="M
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl+++="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

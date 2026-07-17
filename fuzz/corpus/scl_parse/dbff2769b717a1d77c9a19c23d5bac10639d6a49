@@ -1,0 +1,17 @@
+<?xml version="1.0" encooding="UTF-8"?>
+<SCL xmlns="http://www.iec.c(/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/  
+>
+<Communication>
+    <SubNetwork name="W1"1.0" encoding="UTF-8"?>
+<SC type="8-MMS">
+      <ConnectedAP iedName="IED1">
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+     k>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+Y">4</P>
+          </Address>
+        </SMV>
+      </Connecte    <DO nam name="e="M

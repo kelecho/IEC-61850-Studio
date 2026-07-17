@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" veSPCrsion="1" revision="A"/>
+
+  <Communicatio   n
+ ><Sub</SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="Gener<?xmicl

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns1"http://www.iec.ch/IMPLE"&version="0" revision="A" toolID="ies61850-rs"/>
+
+  <Substation name="S1" d">
+        <ConductingEquipment name="QA1" type="CBR"/>Bay>
+    </Volng="UTF-8"der id="E      </ConneID="iec61850c-

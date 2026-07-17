@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec6185rcb1" datSet="ds1" confRev="dchg1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportConttControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchg="true"/>
+            </ReportControl>
+            <DOI name="Mod">
+              <DAI name="stVal">
+                <Val>on</Val>
+              </DAI>
+        </EnumType>
+  </DataTypeTemplates>
+</SCL>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UYF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+    Name="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+        ataSet>
+            <ReportControl name="rcb1" rptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+        2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">teslt/bocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="CtlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

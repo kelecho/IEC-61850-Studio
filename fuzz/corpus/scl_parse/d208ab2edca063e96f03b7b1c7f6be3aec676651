@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch6/1850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1"g="true" qchg="true"/>
+            </Reporttp://www.iec.ch6/1850/2003/SCL">
+  <Header id="EJEMPLID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1"g="true" qchg="true"/>
+            </Reporttp://www.iec.ch6/1850/2003/SCL">
+</DAI>
+            </DOI>
+          </Loding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61849/2003/SCL">
+  <Header id="EJEMPss="MMXU">
+    <On D  ame="A" type="WYE_0" desc=n de ejemplo">
+    <VoltageLevel nam"Corriente de fase"/>
+    </LNodeType>
+    <e="V1">
+      <Bay name="BLNodeType id1">
+      ="  <ConductingEquipmentGGI nO

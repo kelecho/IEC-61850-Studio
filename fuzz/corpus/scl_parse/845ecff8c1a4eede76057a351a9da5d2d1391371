@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.ies.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <Vo<?xml version="1ltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <Con.0" n

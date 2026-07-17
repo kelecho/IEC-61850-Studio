@@ -1,0 +1,55 @@
+name: Fuzz
+
+# Smoke de fuzzing en cada PR que toque parsers (detecta crashes rápido) y una
+# tanda larga nocturna sobre cada objetivo. Requiere nightly (sanitizers).
+on:
+  pull_request:
+    paths:
+      - "crates/iec61850-ber/**"
+      - "crates/iec61850-mms/**"
+      - "crates/iec61850-goose/**"
+      - "crates/iec61850-sv/**"
+      - "crates/iec61850-scl/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ber_data, tpkt_cotp, mms_request, goose_pdu, sv_pdu, scl_parse]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Duración según evento
+        id: cfg
+        # PRs: 60 s por objetivo (gate rápido). Nocturno/manual: 15 min.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "secs=60" >> "$GITHUB_OUTPUT"
+          else
+            echo "secs=900" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Ejecutar
+        run: >-
+          cargo fuzz run ${{ matrix.target }} --
+          -max_total_time=${{ steps.cfg.outputs.secs }}
+          -rss_limit_mb=2048
+      - name: Subir crash si lo hay
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0" desc="Dispositivo lógico principal">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
+            </DataSet>
+            <ReportControl name="rcb1" rptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+       `    <ReportControl name="brcb1" rptID="IED1LD0/
+                </SDI>
+              </SDI>
+  me="f">
+                      <Val>0.5</Val>
+                    </DAI>
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="S~CSO2">
+              <DAI name="ctlModel">
+                <Val>4</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <L@prefixe id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0" dN" fc="ST" dchg="true"/>
+      ="GOOSE" appID="GErol name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+          </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+  </DataTyp </DataTypeTemplates>
+</SCL>

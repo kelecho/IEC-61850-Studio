@@ -1,0 +1,25 @@
+# Banco de interoperabilidad IEC 61850-8-1.
+#
+#   docker compose -f interop/docker-compose.yml up --build -d
+#   IEC61850_INTEROP_ADDR=127.0.0.1:10102 \
+#     cargo test -p iec61850-mms --features client --test interop_client -- --nocapture
+#   docker compose -f interop/docker-compose.yml down
+#
+# Servidor de referencia (libiec61850) contra el que corre nuestro CLIENTE.
+# El sentido inverso (su cliente contra nuestro servidor) se documenta en el
+# README: se levanta `iec61850-sim` y se apunta su cliente de ejemplo.
+services:
+  libiec61850-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.libiec61850
+      args:
+        LIBIEC61850_REF: v1.5.3
+    # 10102 en el host → 102 en el contenedor (evita necesitar privilegios).
+    ports:
+      - "10102:102"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q ':0066' /proc/net/tcp || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

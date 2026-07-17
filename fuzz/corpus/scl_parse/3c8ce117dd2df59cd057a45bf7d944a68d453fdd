@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1"pe="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
+    </DOType>
+
+    <DAType id="SPCOper_0">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name="ctlNu</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+    
+  <Substation name="S1" desc="Subestaci<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/> ldInst="LD0"!prefix="" lnClass="MMXU" lnInst="1" doName="A    </DActor_0">.phsA.cV          </DO
+      <BDA name="mag" bType="Struct" type="AnalogueValue_0"/>
+    </I>
+DA    

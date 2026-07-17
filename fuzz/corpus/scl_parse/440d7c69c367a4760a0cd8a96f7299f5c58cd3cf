@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" >version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedNamev"IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P typ<?GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS'>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">02-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">364</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="smv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+         sion="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+      AC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORDOTypaITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="smv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">5</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="LLN0" lnInst="" doName="Mod" daName="stVal" fc="ST"/>
+            </DatDOTypaaSet>
+  e="MAC-Address">01-0C-CD-01-00-01~/P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID/>">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P ty>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="kmv01">
+          <Addrespe="VLAN-PRIORITY">4</s>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type=P>"VLA

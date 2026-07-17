@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch*61850/2003/SCL"" doName="Mod" daName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+>
+</SCL>

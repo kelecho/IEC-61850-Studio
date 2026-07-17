@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Heade- id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1"<?xml version="1.0" encoding=" id="ItaTypeTemplates>
+</SCL>
+/Server>
+    </AccessPoint>
+  </IED>
+
+  <Data pt="VLAN-`evision="
+  T  A "/ ypeTempl

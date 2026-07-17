@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED nType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <DOType id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">
+      <DA name="phsA" bType="Struct" type="CMV_0" fc="MX" dchg="true" desc="Fase A"/>
+    </DOType>
+    <DOType id="SPC_0" cdc="SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bTypbType="BOOLEAN"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+    </DAType>
+    <DAType id="CMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType="Timestamp"/>
+    </DAType>
+    <DAType id="Vector_0">
+      <BDA name="mag" bType="Struct" type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+
+    <EnumType id="Beh">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="CtlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

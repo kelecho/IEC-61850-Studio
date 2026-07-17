@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="ht/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+    )  <Enum" type="CtlModelKind" fc="CF"/>
+    </ </DOType>
+    <DOType id="SPC_0" cdc="SPC">
+DA name="ctlValal>
+      <EnumVal ord="2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="CtlModelKind">
+      <Enum(Val ord="0">statusion="1.0" encoding>
+  </DataTypeTemplates>
+</SCL>

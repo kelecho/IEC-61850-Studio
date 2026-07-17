@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <@xmlns id="GOOSE_SV_EJEMPLO" versinn="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS)>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cb_0" l\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\nClass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+  @ </LNodeType>
+  $ <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="AINT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL>

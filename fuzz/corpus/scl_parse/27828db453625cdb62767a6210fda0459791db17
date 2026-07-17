@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation nass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
+  type="Beh" fc="ST" dchg="true" desc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <DOType id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">
+      <DA name="phsA" bT/>
+    </DOType>
+    <DOType id="SPC_0" cdc="SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/Type>
+    <DOType id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">
+      <DA name="phsA" bT/>
+    </DOType>
+    <DOType id="SPC_0" cdc="SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
+    </DOType>
+
+    <DAType id="SPCOper_0">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name5"ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+    </DAType>
+    <DAType id="CMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Qua

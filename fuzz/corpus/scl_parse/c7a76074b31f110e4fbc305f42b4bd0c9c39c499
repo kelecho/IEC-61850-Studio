@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-1"?>
+<SCL xmlns="http://www.iec.ch/618:0/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="2" revision="A"/>
+
+  <Communication    <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE lnInstldInst="LD0"       <P type="APPID">0001</P>
+            |<?xml version="1.0" encoding="UTF-8"?>
+<SCyPe L xmlns
+="http:pt//ww="

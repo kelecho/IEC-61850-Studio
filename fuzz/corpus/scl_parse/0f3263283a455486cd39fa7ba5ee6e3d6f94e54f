@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID/>">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+        <SMV ldInst="LD0" cbName="kmv01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED0" type="GenericIED" manufacturer="ACME">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" p(refix="" lnClass="LLN0" lnInst="" doName="Mod" daName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl namrptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" b             </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClasp"/>
+    </DAType>
+    <DAType id="Vector_0">
+      <BDA name="mag" bType="S"tcrut type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+
+    <EnumType id="Beh">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="2">blocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="CtlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</Ene="gcb01" datSet="ds1" confRev="1" type="GOOSE" appgID="GE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+          </LN0>
+        </LDevice>
+      <,Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

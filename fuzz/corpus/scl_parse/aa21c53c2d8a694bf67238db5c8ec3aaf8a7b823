@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork na<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/6185p/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <me="W1" typrer="ACME" configVersion="1.0">
+    <AccessPoint$name="AP1">
+      <Server>
+        <Authentication/>
+         name="rcb1pe="VL" rptID="IEAN-ID"D1L>

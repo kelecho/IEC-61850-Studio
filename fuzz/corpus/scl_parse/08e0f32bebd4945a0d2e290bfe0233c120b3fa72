@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-0"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revi{ion="A"/>
+
+  <Communication>
+    <SubNetwork name="W0" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <AcbName="gcb01">
+          <Address>
+4</P><?GOOSE_SV_EJEMPL<O"

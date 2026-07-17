@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/6185p/2003/SCL">
+  <Header id="GO.ch/61849/2003/SCL">*  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W2" type

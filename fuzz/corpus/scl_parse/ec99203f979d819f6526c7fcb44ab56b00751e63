@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revi{ion="A"/>
+
+  <Communication>
+    <SubN)))))))))))))))))))))))))))pName="AP1">
+        <Address>
+          <P type="IP">196.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" @cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-nst="LD5" @cbName="gcb01">
+          <Address>C-Address">01-0C-CD-01-00-01</P>
+     E_SV_EJEMPL<O"

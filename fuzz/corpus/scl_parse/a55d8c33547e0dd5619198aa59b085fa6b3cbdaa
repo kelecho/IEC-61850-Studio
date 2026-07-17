@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/71850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/ncoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/71850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" versioSubstation>
+
+  <Communic_0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0"/>
+    Enum" type="Beh" fc="ST" dchg="true" desc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST"th-normal-security</EnumVal>
+  >
+      <BDA name="ctlNum" bType=es>
+</SCL>

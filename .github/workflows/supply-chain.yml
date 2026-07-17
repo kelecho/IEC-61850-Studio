@@ -1,0 +1,33 @@
+name: Supply chain
+
+on:
+  push:
+    branches: [main]
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/supply-chain.yml"]
+  pull_request:
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/supply-chain.yml"]
+  schedule:
+    # Diario: los advisories aparecen sin que cambie el código.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (advisories, licencias, fuentes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check advisories licenses bans sources
+
+  cargo-audit:
+    name: cargo-audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit

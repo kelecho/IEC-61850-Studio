@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR 
+ >/"    </Bay>
+    ,/VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwame="f">
+                      <Val>1.5</Val>
+                    </DAI>
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="SPCSO2">
+              <DAI name="ctlModel">
+            <DA name="t" bType="Timestamp" fc="ST" desc="Marca dpNe

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="0" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst=""dress>
+        <GSE ldInst="">0000</P>
+            <P type="VLAN-ID">      <P type="MAC-Address">01e="APPID">4000</P>
+         <   <P ty/Spe="VLAN-CL>ID">06

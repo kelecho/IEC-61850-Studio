@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+        v00">
+          <Address>
+   E">
+    <AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix=""dValueControl name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+         
+            </DataSet>
+            <ReportControl name="rcb1" rpt@prefixID="IED1LD0/se">
+              <TrgOps dchg="true" qchg="true"/>
+        "tr DIED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchg="true"/>
+            </ReportControl>
+            <DOI nameeType id="LLN0_0" lnCl++++++++++++++++++++++++++++++++ass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

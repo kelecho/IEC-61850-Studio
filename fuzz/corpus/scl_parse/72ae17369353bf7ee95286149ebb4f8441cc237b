@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="h61850/2003/SSPCCL">
+  <He(der id="EJEMPLO_SIMPL;E" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+    <   C ond   <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <A</Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">)92.168.1.ddress>10</P
+ >
+ 

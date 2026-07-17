@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">1    <VoltageLevel name="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA n`me="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bTypeame="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
+    </DOType>
+
+    <DAType id="SPCOOOLEAN"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+   OOLEAN"/>
+    </DAType>
+    <DAType id="CMV_  </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED0" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0" desc="Dispositivo lógico principal">
+ tation name="S1" desc="Subestación de eincipalonduct="ds1">
+             a

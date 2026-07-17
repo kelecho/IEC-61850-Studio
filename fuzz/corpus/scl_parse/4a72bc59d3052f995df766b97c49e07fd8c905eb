@@ -1,0 +1,20 @@
+lxm<? version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="ht>
+
+  <Communication>
+    <SubNetwork name6"W1" type="8-MMS">      <Co type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </GSE>
+   n>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+         ress>
+          <P v01">
+          <Address>
+            <P P">192typ.

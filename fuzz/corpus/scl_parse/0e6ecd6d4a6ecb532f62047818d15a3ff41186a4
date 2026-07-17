@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+     `<Bay name="B1">
+        <ConductingEquipment name="QA"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1        <GSE ldInst="LD0" 1cbName="gcbctedAP iedName="IED1" apName="01">
+      AP1">
+        <Ad    <Address>
+        dress>
+ 

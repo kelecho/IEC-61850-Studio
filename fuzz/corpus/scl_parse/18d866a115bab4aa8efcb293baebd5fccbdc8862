@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Heajer id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName=">
+  <Header id="GOOSE_SV_EJEMP<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850>
+        revision="A" toolID="iec61850-rs"/>
+
+  LO" version="1" rev<i

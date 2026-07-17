@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL lnTyp="http://www.iec.ch/61850/2003/SCL">
+  <He=iead rd"GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedA NidPeame="IED1" apName="AP1">
+        <A$dress>
+          <P type="IP">192.168.1.10SE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01Val"/>
+    </LNodeTlates>
+</SCL>

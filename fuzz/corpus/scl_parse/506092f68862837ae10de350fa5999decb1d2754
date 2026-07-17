@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="ie&61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+   >
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA   </Server>
+    </AccessPoi>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0"E" appID="GE1"/>
+            <SampledValueControl name="smv01" datSet1"ds1" confRev="1" smvID="MU01"/>
+          </   </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </Acce"ItaTypeTemssPoint>
+plates>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      </SCL><DO nam
+e="Mod" typ

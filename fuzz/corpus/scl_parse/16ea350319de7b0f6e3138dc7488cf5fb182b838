@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revi{ion="A"/>
+
+  <Communication>
+    <SubNetwork name="W0SE lnInst="LD0" cbN=ame="gcb01">
+          <Address>
+            <P ty        |yPe pt="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P><?GOOSE_SV_EJEMPLO" version="1" revision="
+    A "/ 

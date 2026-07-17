@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://ww7.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W0" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address> cbName="gcb01">
+        
+          <P type="IP">192.168.1.10</P>
+   ec.ch/61850/2003/SCL">
+  <HctedAP iedName="IED1" apName="AP1">
+        <Address>
+              <P type="VLAN-PRIORITY">4</P><?GOOSE_SV_EJEMPLO" version="1" revision="
+    A "/ 

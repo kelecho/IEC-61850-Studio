@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A0-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    <z/VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork nameddress">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+         sion="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <CommuTypalnClass="LLN0">
+      <DO name="Mod" 4ype="INC_0"/>
+    </LNodeType>
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>                 </DAI>
+           > 
+           <FCD        </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+       A ldInst="LD0" p(refix="" lnClass="LLN   <LN prefix=0" lnInst="" doName="" "Ml

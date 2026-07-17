@@ -1,0 +1,6 @@
+<?xml version="1.0" encoging="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_   <AccessPoint name="AP1">
+      <S@dat2eterver>
+        <LDevicelass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet nameControl name="smv01" datSet="ds1" confRev="1" smvI&=D"MUL>

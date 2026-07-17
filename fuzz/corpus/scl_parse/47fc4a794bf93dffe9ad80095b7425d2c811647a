@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  sion="">0" encoding="UTF-8"?>
+<      <GSEContrype="GOOSE" appIDLO" versinn="1* revision="A"/>
+
+UTF-8"?>
+<      <GSEControl name="gcb01" datR  <Communi"gcb00" datSet="ds2" conCMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType="Timestamp"/>
+    </DAType>
+    <DAType id="Vector_0">
+      <BDA name="mag" bType="S"tcrut type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+
+    <EnumType id="Beh">
+ ">
+      <DA name="stV" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  sion="">0" encoding="UTF-8"?>
+<      <GSEContrype="GOOSE" appIDLO" versinn="1* revision="A"/>
+
+UTF-8"?>
+<      <GSEControl name="gcb01" datR  <Communi"gcb00" datSet="ds2" conCMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType="Timestamp"/>
+    </DAType>
+    <DAType id="Vector_0">
+      <BDA name="mag" bType="S"tcrut type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">al" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality"fc ="ST" qchg="true"/>
+      <0"/>
+      <BDA name="Re@nClassype="GOOSE" appIDLO" versinn="1" revision="A"/>
+ychg-8"?>
+<      <GSEControl name="gcb01" datS  <Communi
+  <Header id="EJcation>
+    <SubNetwor"?>
+<      <GSEControl name="gcb01SE" appIDLO" versinn="1" revision="A"/>
+
+UTF-8"?>
+<      <GSEControl name="gcb01" datR  <Communi"gcb00" datSet="ds1" confRe@nClassype="GOOSE" apor"?>
+<      <GSEControl name="gcb01" datS  <Communi
+  <Header id="EJcation>
+    <SubNetwork name//    <DOTy]pe id="ItaTypeTemplates>
+</SCL>

@@ -1,0 +1,66 @@
+[package]
+name = "iec61850-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Fuera del workspace principal: cargo-fuzz gestiona su propio target/ y perfil,
+# y libfuzzer-sys solo compila bajo nightly con -Z sanitizer.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+iec61850-ber = { path = "../crates/iec61850-ber" }
+iec61850-goose = { path = "../crates/iec61850-goose" }
+iec61850-sv = { path = "../crates/iec61850-sv" }
+iec61850-scl = { path = "../crates/iec61850-scl" }
+iec61850-mms = { path = "../crates/iec61850-mms", features = ["server"] }
+
+[profile.release]
+debug = 1
+
+# Un binario por objetivo de fuzzing. test = false / doc = false: no son tests.
+[[bin]]
+name = "ber_data"
+path = "fuzz_targets/ber_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tpkt_cotp"
+path = "fuzz_targets/tpkt_cotp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mms_request"
+path = "fuzz_targets/mms_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "goose_pdu"
+path = "fuzz_targets/goose_pdu.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sv_pdu"
+path = "fuzz_targets/sv_pdu.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scl_parse"
+path = "fuzz_targets/scl_parse.rs"
+test = false
+doc = false
+bench = false

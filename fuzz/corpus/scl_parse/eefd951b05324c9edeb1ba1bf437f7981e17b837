@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedA NidPeame="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Addre''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''ss>
+        <GSE ldInst="LD0" cbName="gcb01">" fc="CF"/>
+    </DOType>
+    <DOType id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+        ED0" type="GenericIEDype="GOOSE" appID="GE1"/>
+            <SampledVal"/>
+    </LNodeType>
+    <DOType id="ItaTypeTemplates>
+</SCL>

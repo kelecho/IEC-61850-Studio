@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SSL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+confRev="1" smvID="MU01"/>
+          </LN0>
+        id="ItaTypeTemplates>
+</SCL>

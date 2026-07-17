@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0" desc="Dispositivo lógico principal">
+          <LN0 lnCdass="LLN0" inst="" lnType="LLN0_h" type="INS_0" desc="Comportamiento"/>
+    </LNodeType>
+    <LNodeType id="MMXU_0" lnClass="MMXU">
+      <DO name="A" type="WYE_0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc>
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0"/>
+    </LNodeType>
+
+    <DOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="Enum" type="Beh" fc="ST" dchg="true" desc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA n@xmlnsame="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+   al ord="2">ylocked</EnumVal>
+      <EnumVal ord="3">test</EnumVal>
+      <EnumVal ord="</EnumVal>
+    </EnumType>
+    <EnumTy2pe id="CtlModelKind">
+      <EnumVal ord="0">status-only</EnumVal>
+      <EnumVal ord="1">direct-with-normal-security</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

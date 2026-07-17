@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+          <DOType id="WYE_0" cdc="WYE">
+      <DA name="phsA" bType="Struct" type="CMV_0" fc="MX" dchg="true" desc="Fase A"/>
+    </DOType>
+    <DOType id="SPC_0" cdc="SPC">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
+      <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
+    </DOType>
+
+    <DAType id="SPCOper_0">
+      <BDA name="ctlVal" bType="BOOLEAN"/>
+      <BDA name="ctlNum" bType="INT8U"/>
+      <BDA name="T" bType="Timestamp"/>
+      <BDA name="Test" bType="BOOLEAN"/>
+    </DAType>
+    <DAType id="CMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bTypc="Timestamp"/>
+    </DAType>
+    <DAType id="VectSor_0">
+      <BDA name="mag" bType="S"tcrut type="AnalogueValue_0"/>
+    </DAType>
+    <DAType id="AnalogueValue_0">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+
+    <EnumType id="Beh">
+      <EnumVal ord="1">on</EnumVal>
+   >direct-with-normal-security</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</S <EnumVal ord="4">test/blocked</EnumVal>
+      <EnumVal ord="5">off</EnuodeType>
+    <DOTypaDOType id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOType>
+  </DataTypeTemplates>
+</SCL>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    sc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <D" doName="A.phsA.cVal.mag" daName="f" fc="MX"<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <@xmlns id="GOOSE_SV_EJEMPLO" versinn="1" revision="A"/>
+
+  <Communication>
+    <SubNe   </Address>
+        <GSE ldInst="LD0" cbName="gcb01&>
+          <Address>/>
+      
+          <

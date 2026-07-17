@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # missing_docs está activo como warn en [workspace.lints] pero aún hay ~700
+  # items públicos sin documentar; se excluye del gate hasta completar el
+  # burn-down (ROADMAP fase 1.3) y entonces se retira la excepción.
+  LINT_EXCEPTIONS: -A missing-docs
+  # Todas las features de los crates de librería. Las features *net* (AF_PACKET)
+  # son solo-Linux; ver FEATURES_PORTABLE para el resto de plataformas.
+  FEATURES_FULL: >-
+    iec61850/config iec61850/mms iec61850/mms-server iec61850/mms-tls
+    iec61850/mms-tokens
+    iec61850/goose-net iec61850/sv-net iec61850/goose-ecdsa iec61850/sv-ecdsa
+    iec61850/serde
+    iec61850-mms/client iec61850-mms/server iec61850-mms/tls iec61850-mms/tokens
+    iec61850-goose/net iec61850-sv/net iec61850-l2/net
+    iec61850-goose/ecdsa iec61850-sv/ecdsa iec61850-l2/ecdsa
+    iec61850-model/serde iec61850-scl/serde
+  FEATURES_PORTABLE: >-
+    iec61850/config iec61850/mms iec61850/mms-server iec61850/mms-tls
+    iec61850/serde
+    iec61850-mms/client iec61850-mms/server iec61850-mms/tls
+    iec61850-model/serde iec61850-scl/serde
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (sin features)
+        run: cargo clippy --all-targets --no-default-features -- -D warnings ${LINT_EXCEPTIONS}
+      - name: Clippy (todas las features)
+        run: cargo clippy --all-targets --features "${FEATURES_FULL}" -- -D warnings ${LINT_EXCEPTIONS}
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests (features por defecto)
+        run: cargo test
+      - name: Tests (sin features)
+        run: cargo test --no-default-features
+      - name: Tests (todas las features)
+        if: runner.os == 'Linux'
+        run: cargo test --features "${FEATURES_FULL}"
+      - name: Tests (features portables)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: cargo test --features "${FEATURES_PORTABLE}"
+
+  # Cada feature de cada crate compila por sí sola (detecta features rotas
+  # que solo funcionan acompañadas de otras).
+  features:
+    name: matriz de features (cargo-hack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - uses: Swatinem/rust-cache@v2
+      - run: >-
+          cargo hack check --each-feature --no-dev-deps
+          -p iec61850-model -p iec61850-ber -p iec61850-l2 -p iec61850-scl
+          -p iec61850-mms -p iec61850-goose -p iec61850-sv -p iec61850
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets --features "${FEATURES_FULL}"
+
+  doc:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings -A missing-docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --features "${FEATURES_FULL}"
+
+  apps:
+    name: apps (simulador)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # La GUI egui requiere toolchain de sistema; el simulador CLI sí forma parte
+      # del gate. La app Tauri se valida en su propio job `tauri`.
+      - run: cargo build -p iec61850-sim
+
+  # Compila la app Tauri (frontend + backend Rust) para que una rotura de la API
+  # de la librería no la rompa en silencio (el backend no entra en el `cargo test`
+  # por defecto, que solo cubre `crates/*`).
+  tauri:
+    name: app Tauri (frontend + backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Dependencias del sistema del webview de Tauri (WebKitGTK/GTK/libsoup).
+      - name: Dependencias del sistema (WebKitGTK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libgtk-3-dev libsoup-3.0-dev librsvg2-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Frontend: instala deps (lockfile congelado) y compila (tsc + vite) → dist,
+      # que `generate_context!` del backend necesita embeber.
+      - name: Frontend (pnpm build → dist)
+        working-directory: apps/iec61850-tauri
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+      # Backend: compila el core Rust de Tauri contra el dist real.
+      - name: Backend Tauri (cargo build)
+        run: cargo build -p iec61850-tauri
+
+  coverage:
+    name: cobertura (llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      - name: Cobertura de tests
+        run: |
+          cargo llvm-cov --features "${FEATURES_FULL}" --lcov --output-path lcov.info
+          cargo llvm-cov report --features "${FEATURES_FULL}" --summary-only >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+
+  # Vigila roturas de API pública comparando contra la rama base del PR.
+  # (Cuando los crates estén en crates.io se puede quitar --baseline-rev y
+  # comparar contra la última versión publicada.)
+  semver:
+    name: semver-checks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - uses: Swatinem/rust-cache@v2
+      - run: >-
+          cargo semver-checks check-release
+          --baseline-rev "origin/${{ github.base_ref }}"
+          -p iec61850-model -p iec61850-ber -p iec61850-l2 -p iec61850-scl
+          -p iec61850-mms -p iec61850-goose -p iec61850-sv -p iec61850

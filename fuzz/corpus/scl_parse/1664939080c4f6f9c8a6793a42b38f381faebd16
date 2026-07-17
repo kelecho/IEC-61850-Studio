@@ -1,0 +1,92 @@
+<?xml version="1.0" encoe="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <" bType="Quality" fc=TS"" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <DOType id="INS_0" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA       <BDA name="Test" bType="BOOLEAN"/>
+    </DAType>
+    <DAType id="CMV_0">
+      <BDA name="cVal" bType="Struct" type="Vector_0"/>
+      <BDA name="q" bType="Quality"/>
+      <BDA name="t" bType=mp"/>
+    </DAType>
+  <?xml version version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id=
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName" toolID="iec61850-rs"/>
+
+  <Su           <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID/>">0001</P>
+            <P type="  VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+  <DAType      </ id="VectoGSE

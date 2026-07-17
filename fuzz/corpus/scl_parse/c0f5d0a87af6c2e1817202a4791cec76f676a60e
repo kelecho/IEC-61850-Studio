@@ -1,0 +1,20 @@
+<?GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS'>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">1920" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT3.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type id="INC_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL>

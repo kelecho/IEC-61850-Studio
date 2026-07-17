@@ -1,0 +1,15 @@
+buffe version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/"IP">192.168.on>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPion="1" revision="A"/>
+
+  <Communication>
+    <Su          <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb1" rptIDName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+       ddress>
+            <P type="ision="
+    A "           </ DOI name="Mod">

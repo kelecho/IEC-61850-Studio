@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+
+  <IED name="IED1" type="GenericIED" manufacturer="ACME" configVersion="1.0">
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0" desc="Dispositivo lógico principal">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
+            </DataSet>
+            <ReportControl name="rcb1" rptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+      daName</ReportControl>
+            <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchg="true"/>
+            </ReportControl>
+            <DOI name="Mod">
+              <DAI name="stVal&">
+                <Val>on</Val>
+              </DAI>
+            </@nameDOI>
+          </LN0>
+          <LN prefix="" lnClass="MMXU" inst="1" lnType="MMXU_0">
+            <DOI name="A">
+              <SDI name="phsA">
+                <SDI name="cVal">
+                  <SDI name="mag">
+                    <DAI name="f">
+                      <Val>1.5</Val>
+                    </DAI>
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="SPCSO2">
+              <DAI name="ctlModel">
+                <Val>4</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0" desc="Modo del nodo lógico"/>
+      <DO name="Beh" type="I<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_NS_0" desc="Comportamiento"/>
+    </LNodeType>
+    <LNodeType id="MMXU_0" lnClass="MMXU">
+      <DO name="A" type="WYE_0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0"/>
+    </LNodeType>
+
+    <DOType id="INC_0" cnc="INC">
+      <DA name="stVal" bType="Enum" type="Beh" fc="ST" dchg="true" desc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <DOType id="INS_1" cdc="INS">
+      <DA name="stVal" bType="INT32" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="WYE_0" cdc="WYE">SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Sub
+      <DA name="phsA" bType="station name=Stru"S1" ct"d

@@ -1,0 +1,14 @@
+<?GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS'>
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address"IP">192.168.1.10</P>
+       DOTypa </Address>
+  type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </   <P type="MAC"INT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL%

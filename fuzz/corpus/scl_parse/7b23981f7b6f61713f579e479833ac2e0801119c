@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  sion="">0" encoding="UTF-8"?>
+<      <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appIDLO" versinn="1" revision="A"/>
+
+UTF-8"?>
+<      <GSEControl name="gcb01" datS  <Communi"gcb01" datSet="ds1" confRe@nClassype="GOOSE" appIDLO" versinn="1" revision="A"/>
+
+UTF-8"?>
+smvIDGE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="I1vm "sD="MU01"/>  
+        </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeTyption>
+
+  <IED name="IED1" type="GenericIEe id="LLN5_0" lnCl+++++++++++++++!++++++++++++++++ass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    /SCL>

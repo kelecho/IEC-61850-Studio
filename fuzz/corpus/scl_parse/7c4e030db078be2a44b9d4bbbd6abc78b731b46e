@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2002/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" Revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación deepem<?xmlFversion="1.0appIDoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch      <ConnectedAP iedName="IED1" apName="AP1">
+       <P type="IP">192.168.1.10</P>
+  <?xml version="1.0" encoding="UTF      </Address-8"?>
+<SCL xmlns="http>
+     ConnectedAP iedName="IED1" apName="AP1">>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca dpNe

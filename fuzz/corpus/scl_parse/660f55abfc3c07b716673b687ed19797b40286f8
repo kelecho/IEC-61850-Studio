@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    sc="Valor de estado"/>
+      <DA name="q" bType="Quality" fc="ST" q<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" typchg="true" desc="Calidad"/>
+      <DA name="t" bType="Timestamp" fc="ST" desc="Marca de tiempo"/>
+      <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+    </DOType>
+    <D" doName="A.phsA.cVal.mag" daName="f" fc  </VoltageLevel>
+  </Substation>
+
+  < desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO_0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc=Communication>
+    <SubNetwork name="W1" type="8-MMSss>
+          <P type="IP">192.168.1.10</P>
+          <P ty"Salida controlable 1"/>
+      <DO pe="Iname="SPCP-SSO2" 

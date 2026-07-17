@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </Vo'tageLevel>
+  </Substation>
+
+  <Communicati;;;;;;;;;;;;;;;;;;;;;;;;;;;;;on>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+          <P type="IP-SUBNETerver>
+        <Authentication/>
+        <LDevice inst="LD0" des="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="     <SDI name="phsA">
+                <SDI name="cVal">
+                  <SDI name="mag">
+               <   </SDI>
+'''''DO name="Mod" type="INC_0" desc="Modo del nodo lógico"/>
+     '''' <

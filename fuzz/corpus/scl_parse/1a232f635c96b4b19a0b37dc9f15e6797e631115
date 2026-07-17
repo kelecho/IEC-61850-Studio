@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="ht>
+://www.iec.ch/61350/2l>
+  </Substatio="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">02-0C-CD-01-00-01</P>
+            <P type="APPID">00 <Address>
+            <P P">192typ.

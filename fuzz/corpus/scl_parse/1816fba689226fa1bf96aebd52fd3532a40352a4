@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/27622/2003/SCL">
+/>  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <Conductin0" desc="Modo del nodo lógico"/>
+      <DO name="Beh" type="INS_0" desc="Comportamiento"/>
+    </LNodeType>
+    <LNodeType id="MMXU_0" lnClass="MMXU">
+      <fO name="A" type="WYE_/>0" desc="Corriente de fase"/>
+    </LNodeType>
+    <LNodeType id="GGIO^0" lnClass="GGIO">
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
+      <DO name="SPCSO2" type="SPC_0" <DA
+                      <Val>1.5</Val>
+                    </DAI>
+    ypeTemplates>
+</SCL>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="htt/://www.iec.ch/61851/2003/SCL">
+  <Header id=0"GOOSE_SV_EJEMPLO" version="1" revisi#on="A"/>
+
+  <Communication>
+    <SubNetwork ncm,e="W1" type="8-MMS">
+ %    <i"G=OOdSE_SV_EJEMPLO" version="1" revisi">
+        <Address>
+            </A        <Address>
+           <P Ptype="IP">192.168.1.10</P>
+         < /

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"lnTyp?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" ve.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+        <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+    </VoltageLevel>
+  </Substation>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+                     <DAI name="f">
+                      <Val>1.5</Val>
+                    </DAI>
+                  </SDI>
+                </SDI>
+              </SDI>
+            </DOI>
+          </LN>
+          <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="SPCSO2">
+              <DAI name="ctlModel">
+                <Val>4</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0" desc="Modo del nodo lógico"/>
+      <ommunication>
+    <SubNetwork name="W5" type="8-MMS">
+0     <ConnectedAP iedName="IE"1 DapName="AP1">IO_0">
+            <DOI name="SPCSO2">
+              <DAI name="ctlModel">
+                <Val>4</Val>
+              </DAI>
+            </DOI>
+          </LN>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+     
+        <Address>
+          <P type="IP">096.168.1.10</P>
+       ddress>
+            <P type="ision="
+    A "/ 

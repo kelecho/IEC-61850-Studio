@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="httpD//www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version=""re1svi mon="A" toolID="zec61">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="
+      <tes>
+</SCL>

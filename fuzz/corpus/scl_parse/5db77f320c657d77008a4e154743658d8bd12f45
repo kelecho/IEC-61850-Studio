@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apNam(="AP1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName=""0cbg>1
+          <Address>
+            <P type="VLAN-ID">0ss>
+://www.iec.ch/61850/2003/SCL version="1" revision="A" toolID="iec61850-rs"/>
+
+  <Substation name="S1" dl version="1.0" encod<AccessPoint name="AP1">
+      <Server>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0_0">
+            <DataSet name="ds1">
+              <FCDA ldInst="LD0" pss>
+        </GSE>
+     station>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Addres   <SMV ldInst="LD0" cbName="kmv01">
+  s 

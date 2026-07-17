@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-7"?>
+<SCL xmlns="http:ec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+          <P type="MAC-Address">01-0C-CD-04-00-01</P>
+            <P type="APPID">4000</P>
+            <P type="VLAN-ID">065</P>
+        @name    <P>
+            <P type="VLAN-PRIORITY">4</P>ding="UTF   Address>0" encoding="UTF-8"?>
+<Slns="http://www.ieAN-ID@lnType="W164"<

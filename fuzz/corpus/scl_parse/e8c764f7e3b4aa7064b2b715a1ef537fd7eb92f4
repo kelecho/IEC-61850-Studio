@@ -1,0 +1,8 @@
+<? version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://ww$name<Ph/61850/2003/SCL">
+  <Header id="GOODDDDDDDDDDDDDSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+ 																																 fc="ST" dchg="true     0

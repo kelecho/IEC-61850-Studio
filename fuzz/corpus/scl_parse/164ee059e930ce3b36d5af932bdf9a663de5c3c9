@@ -1,0 +1,11 @@
+<?xml version="1.0" 
+  <Communication>
+    <SubNetwork name="W0" tIED1" apName="AP1">
+        <Address>
+          <P type="IP">196.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" @cbName="gcb01">
+          <Address-01</P>
+            <P type="APPID">0001</P>
+            |yPe pt="VLAN-Ievision="
+    A "/ 

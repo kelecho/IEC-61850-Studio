@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO_SIMPLE" version="bstation name="S1" desc="Subestación de ejemplo">
+    <VoltageLevel name="V1">
+      <Bay name="B1">
+     st="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID">0001</P>
+            <P type="VLAN-ID">064</P>
+            <P type="VLAN-PRIORITY">4</P>
+      pe="VLAN-ID">064</P>
+   MS">
+      <ConnectedAP iedName="IED1" apName="AP1   <ConductingEquipment name="QA1" type="CBR"/>
+      </Bay>
+Address>
+          <P ty
+              <DAI name="stVal"D-02-00-01</P>
+            <P type="APPID">0001<

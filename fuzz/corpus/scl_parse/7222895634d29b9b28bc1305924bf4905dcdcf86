@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="EJEMPLO'SIMPLE" version="bstation #8"?>
+<SCL xmlns="MAC-Address">01-0C-CD-0     </Server>
+   D0" prefix="" lnClass="on="1.0">
+    <AccessPoint name="AP1    <P type="APPID">0001<

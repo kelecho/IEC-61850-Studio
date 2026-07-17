@@ -1,0 +1,45 @@
+name: interop
+
+# Banco de interoperabilidad contra libiec61850 (servidor MMS de referencia).
+# NO bloquea los PR: libiec61850 es código externo (GPLv3) que se compila y se
+# ejecuta solo como par de pruebas por red. Se dispara a mano o cada noche.
+on:
+  workflow_dispatch:
+  schedule:
+    # Todas las noches a las 04:17 UTC.
+    - cron: "17 4 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  interop-mms:
+    name: cliente ↔ libiec61850 (server_example_basic_io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Compila y arranca el servidor de referencia (Dockerfile.libiec61850);
+      # --wait bloquea hasta que el healthcheck lo marca sano (puerto 102 arriba).
+      - name: Levantar servidor de referencia
+        run: docker compose -f interop/docker-compose.yml up --build -d --wait
+
+      # Nuestro MmsClient contra el servidor de terceros. --test-threads=1 porque
+      # server_example_basic_io acepta pocas conexiones concurrentes.
+      - name: Arnés de interop (nuestro cliente)
+        env:
+          IEC61850_INTEROP_ADDR: 127.0.0.1:10102
+        run: >-
+          cargo test -p iec61850-mms --features client --test interop_client
+          -- --nocapture --test-threads=1
+
+      # Diagnóstico: si algo falla, los logs del servidor de referencia ayudan.
+      - name: Logs del servidor (si falla)
+        if: failure()
+        run: docker compose -f interop/docker-compose.yml logs
+
+      - name: Parar servidor de referencia
+        if: always()
+        run: docker compose -f interop/docker-compose.yml down

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" rpe="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+    etwork>
+  </Communication>
+
+ s>
+</SCL>

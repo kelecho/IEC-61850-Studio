@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?:>
+<SCL xmlns="1">
+        <Address>
+          <P type="IP">192.168.1.10</P>
+        </Address>
+        <GSE ldInst="LD0" cbName="gcb01">
+          <Address>
+            <P type="MAC-Address">01-0C-CD-01-00-01</P>
+        </GSE>
+        <SMV ldInst="LD0" caName="stVal" fc="ST"/>
+            </DataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+          </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="INCDataSet>
+            <GSEControl name="gcb01" datSet="ds1" confRev="1" type="GOOSE" appID="GE1"/>
+            <SampledValueControl name="smv01" datSet="ds1" confRev="1" smvID="MU01"/>
+          </LN0>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+
+  <DataTypeTemplates>
+    <LNodeType id="LLN0_0" lnClass="LLN0">
+      <DO name="Mod" type="INC_0"/>
+    </LNodeType>
+    <DOType id="INL_0" cdc="INC">
+      <DA name="stVal" bType="INT32" fc="ST"/>
+    </DOTypa>
+  </DataTypeTemplates>
+</SCL>

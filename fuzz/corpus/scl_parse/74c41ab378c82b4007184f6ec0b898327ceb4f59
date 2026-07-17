@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetworc.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPL <GSE ldInst="LD0" cbName="k name="W1" type="8-MMS">
+      <id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+ <Communic`tion>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedNa        0  <P type="MAC-Address">01-0C-CD-01-00-01</P>
+            <P type="APPID/>">000pe="8-MMS">
+      <ConnectedAP iedName="IED1" ap68.1.10</P>
+        </Address>
+        <GSE<P type="VLAN-PRIORITY">4</P>
+           

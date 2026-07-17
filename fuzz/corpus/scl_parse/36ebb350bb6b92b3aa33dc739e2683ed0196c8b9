@@ -1,0 +1,22 @@
+<?xdl version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+
+  <Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.1<?xml version="1.0" encoding="UTF<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="GOOSE_SV_EJEMPLO" version="1" revision="A"/>
+="http://www.iec.ch/618D">4000</P>
+            <P type="VLAN-ID">065</P>
+   
+  <Communicati="VLAN-ID">065</P>
+            <P type="VLAN-PRIORITY">4</P>
+          </Address>
+        </SMV>
+         <P type="VLAN-PRIORITY"> inst="LD0" desc="Dispositivo lógico principal">
+          <LN0 lnC>
+    <AccesLLN0_0taerSsPo
