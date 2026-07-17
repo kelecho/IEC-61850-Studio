@@ -15,6 +15,8 @@ pub const LINKTYPE_ETHERNET: u32 = 1;
 
 /// Magic number del formato pcap en orden little-endian (`0xA1B2C3D4`).
 const PCAP_MAGIC: u32 = 0xA1B2_C3D4;
+/// El mismo magic visto con orden de bytes invertido (captura big-endian).
+const PCAP_MAGIC_SWAPPED: u32 = 0xD4C3_B2A1;
 /// `snaplen` por defecto: tramas Ethernet completas con margen para jumbo/VLAN.
 const DEFAULT_SNAPLEN: u32 = 65_536;
 
@@ -86,6 +88,105 @@ impl<W: Write> PcapWriter<W> {
     }
 }
 
+/// Un paquete leído de una captura pcap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcapPacket {
+    pub ts_sec: u32,
+    pub ts_usec: u32,
+    /// Datos capturados (hasta `snaplen` octetos).
+    pub data: Vec<u8>,
+}
+
+/// Lector de capturas en formato **pcap clásico**. Complemento de [`PcapWriter`]:
+/// itera los paquetes de un buffer en memoria, tolerando tanto el orden
+/// little-endian como big-endian (magic invertido). Es puro (sin E/S ni red), así
+/// que reproduce capturas del corpus en tests de regresión de los codecs.
+pub struct PcapReader {
+    data: Vec<u8>,
+    pos: usize,
+    big_endian: bool,
+    /// Tipo de enlace de la cabecera global (p. ej. [`LINKTYPE_ETHERNET`]).
+    pub linktype: u32,
+    /// `snaplen` declarado en la cabecera global.
+    pub snaplen: u32,
+}
+
+impl PcapReader {
+    /// Abre una captura desde sus bytes. Falla si la cabecera global está
+    /// truncada o el magic number no es de pcap clásico.
+    pub fn new(bytes: impl Into<Vec<u8>>) -> io::Result<Self> {
+        let data = bytes.into();
+        if data.len() < 24 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "cabecera pcap truncada",
+            ));
+        }
+        let magic = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let big_endian = match magic {
+            PCAP_MAGIC => false,
+            PCAP_MAGIC_SWAPPED => true,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "magic number pcap desconocido",
+                ));
+            }
+        };
+        let rd = |b: &[u8], be: bool| -> u32 {
+            let a: [u8; 4] = b.try_into().unwrap();
+            if be {
+                u32::from_be_bytes(a)
+            } else {
+                u32::from_le_bytes(a)
+            }
+        };
+        let snaplen = rd(&data[16..20], big_endian);
+        let linktype = rd(&data[20..24], big_endian);
+        Ok(Self {
+            data,
+            pos: 24,
+            big_endian,
+            linktype,
+            snaplen,
+        })
+    }
+
+    fn read_u32(&self, at: usize) -> u32 {
+        let a: [u8; 4] = self.data[at..at + 4].try_into().unwrap();
+        if self.big_endian {
+            u32::from_be_bytes(a)
+        } else {
+            u32::from_le_bytes(a)
+        }
+    }
+}
+
+impl Iterator for PcapReader {
+    type Item = PcapPacket;
+
+    fn next(&mut self) -> Option<PcapPacket> {
+        // Cabecera de registro: 16 octetos (ts_sec, ts_usec, incl_len, orig_len).
+        if self.pos + 16 > self.data.len() {
+            return None;
+        }
+        let ts_sec = self.read_u32(self.pos);
+        let ts_usec = self.read_u32(self.pos + 4);
+        let incl_len = self.read_u32(self.pos + 8) as usize;
+        self.pos += 16;
+        if self.pos + incl_len > self.data.len() {
+            return None; // registro truncado: fin de la captura
+        }
+        let data = self.data[self.pos..self.pos + incl_len].to_vec();
+        self.pos += incl_len;
+        Some(PcapPacket {
+            ts_sec,
+            ts_usec,
+            data,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +223,63 @@ mod tests {
         assert_eq!(u32::from_le_bytes(rec[8..12].try_into().unwrap()), 4); // incl_len
         assert_eq!(u32::from_le_bytes(rec[12..16].try_into().unwrap()), 4); // orig_len
         assert_eq!(&rec[16..20], &frame);
+    }
+
+    #[test]
+    fn reader_round_trips_writer() {
+        let mut w = PcapWriter::new(Vec::new()).unwrap();
+        w.write_packet(1, 2, &[0xAA, 0xBB]).unwrap();
+        w.write_packet(3, 4, &[0xCC, 0xDD, 0xEE]).unwrap();
+        let bytes = w.into_inner();
+
+        let reader = PcapReader::new(bytes).unwrap();
+        assert_eq!(reader.linktype, LINKTYPE_ETHERNET);
+        let pkts: Vec<_> = reader.collect();
+        assert_eq!(
+            pkts,
+            vec![
+                PcapPacket {
+                    ts_sec: 1,
+                    ts_usec: 2,
+                    data: vec![0xAA, 0xBB]
+                },
+                PcapPacket {
+                    ts_sec: 3,
+                    ts_usec: 4,
+                    data: vec![0xCC, 0xDD, 0xEE]
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn reader_accepts_big_endian_magic() {
+        // Cabecera global big-endian con un registro de 1 octeto.
+        let mut b = Vec::new();
+        b.extend_from_slice(&PCAP_MAGIC_SWAPPED.to_le_bytes()); // magic tal cual (BE visto en LE)
+        b.extend_from_slice(&2u16.to_be_bytes());
+        b.extend_from_slice(&4u16.to_be_bytes());
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&0u32.to_be_bytes());
+        b.extend_from_slice(&65_536u32.to_be_bytes());
+        b.extend_from_slice(&LINKTYPE_ETHERNET.to_be_bytes());
+        // registro
+        b.extend_from_slice(&9u32.to_be_bytes()); // ts_sec
+        b.extend_from_slice(&0u32.to_be_bytes()); // ts_usec
+        b.extend_from_slice(&1u32.to_be_bytes()); // incl_len
+        b.extend_from_slice(&1u32.to_be_bytes()); // orig_len
+        b.push(0x42);
+
+        let mut reader = PcapReader::new(b).unwrap();
+        assert!(reader.big_endian);
+        let p = reader.next().unwrap();
+        assert_eq!((p.ts_sec, p.data), (9, vec![0x42]));
+        assert!(reader.next().is_none());
+    }
+
+    #[test]
+    fn reader_rejects_bad_magic() {
+        assert!(PcapReader::new(vec![0u8; 24]).is_err());
     }
 
     #[test]
