@@ -1,8 +1,273 @@
-/* El layout y el tema los aporta Mantine (AppShell, componentes). Aquí solo un
-   reset mínimo para que la ventana ocupe todo el alto. */
+/* Reset mínimo: la ventana ocupa todo el alto. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Layout tipo IDE: barra de comandos + rail + paneles + estado
+   Dirección visual: "cobre sobre acero" — panel de instrumentación
+   de subestación. El cobre (--mantine-color-brand-*) marca identidad
+   e interacción; teal/rojo/amarillo quedan para calidad IEC 61850-7-3.
+   ============================================================ */
+.ide-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--mantine-color-body);
+}
+
+/* Barra de comandos superior */
+.ide-commandbar {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  height: 52px;
+  flex: 0 0 auto;
+  padding: 0 var(--mantine-spacing-sm);
+  background: var(--mantine-color-default);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+/* Marca como placa de identificación (nameplate) de un relé:
+   mono, mayúsculas, espaciado — atornillada a la esquina del panel. */
+.ide-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  user-select: none;
+  white-space: nowrap;
+}
+.ide-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  color: #14100b;
+  background: linear-gradient(160deg, var(--mantine-color-brand-4), var(--mantine-color-brand-6));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent);
+}
+
+/* Cuerpo: rail + paneles */
+.ide-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Rail de actividad (iconos) */
+.ide-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  flex: 0 0 56px;
+  padding: 8px 0;
+  background: var(--mantine-color-default);
+  border-right: 1px solid var(--mantine-color-default-border);
+}
+.ide-rail-btn {
+  position: relative;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+/* Indicador de sección activa: barra de cobre, como un borne encendido. */
+.ide-rail-btn::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  height: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--mantine-color-brand-5);
+  transform: translateY(-50%);
+  transition:
+    height 0.18s ease,
+    top 0.18s ease;
+}
+.ide-rail-btn[data-active]::before {
+  height: 22px;
+}
+
+/* Panel del navegador */
+.ide-nav {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: var(--mantine-spacing-xs);
+  background: var(--mantine-color-body);
+}
+
+/* Panel principal (contenido de la sección) */
+.ide-main {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--mantine-spacing-md);
+  background: var(--mantine-color-body);
+}
+/* Fade-in del contenido al cambiar de sección */
+.ide-main [role="tabpanel"] {
+  animation: fadeIn 0.2s ease;
+}
+
+/* ============================================================
+   Cabecera de sección — la firma de la app.
+   Eyebrow normativo (la parte de IEC 61850 que ejercita la sección)
+   y regla que termina en un terminal de cobre.
+   ============================================================ */
+.section-eyebrow {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mantine-color-brand-4);
+}
+:root[data-mantine-color-scheme="light"] .section-eyebrow {
+  color: var(--mantine-color-brand-7);
+}
+.section-rule {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 40px;
+}
+.section-rule::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    var(--mantine-color-default-border),
+    color-mix(in srgb, var(--mantine-color-brand-5) 55%, transparent)
+  );
+}
+.section-rule::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 2px;
+  background: var(--mantine-color-brand-5);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mantine-color-brand-5) 60%, transparent);
+}
+
+/* Barra de estado inferior: registro de instrumento, en mono. */
+.ide-statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-md);
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 var(--mantine-spacing-sm);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--mantine-color-dimmed);
+  background: var(--mantine-color-default);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+/* Manija de redimensionado entre paneles */
+.ide-resize {
+  width: 6px;
+  background: transparent;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.ide-resize::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  border-radius: 2px;
+  background: var(--mantine-color-default-border);
+  transition: background 0.15s ease;
+}
+.ide-resize:hover::after,
+.ide-resize[data-resize-handle-state="drag"]::after {
+  background: var(--mantine-color-brand-5);
+}
+
+/* Punto de estado (online) con pulso */
+.status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mantine-color-teal-6);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--mantine-color-teal-6) 70%, transparent);
+  animation: pulse 2s infinite;
+}
+.status-dot[data-off] {
+  background: var(--mantine-color-gray-6);
+  animation: none;
+}
+
+/* Realce sutil de tarjetas al pasar el ratón: borde que "conduce",
+   sin levitar (esto es un panel, no una web). */
+.lift {
+  transition: border-color 0.15s ease;
+}
+.lift:hover {
+  border-color: color-mix(in srgb, var(--mantine-color-brand-5) 45%, var(--mantine-color-default-border));
+}
+
+/* Foco visible para teclado, en cobre. */
+:focus-visible {
+  outline: 2px solid var(--mantine-color-brand-5);
+  outline-offset: 1px;
+}
+
+/* ===================== Animaciones ===================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--mantine-color-teal-6) 70%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Respeta la preferencia de movimiento reducido. */
+@media (prefers-reduced-motion: reduce) {
+  .ide-main [role="tabpanel"] {
+    animation: none;
+  }
+  .status-dot {
+    animation: none;
+  }
+  .ide-rail-btn,
+  .ide-rail-btn::before,
+  .ide-resize,
+  .ide-resize::after,
+  .lift {
+    transition: none;
+  }
 }

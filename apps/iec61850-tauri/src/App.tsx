@@ -5,7 +5,6 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   Accordion,
   ActionIcon,
-  AppShell,
   Badge,
   Box,
   Button,
@@ -14,6 +13,7 @@ import {
   Code,
   Divider,
   Group,
+  Indicator,
   Modal,
   NumberInput,
   Paper,
@@ -29,13 +29,13 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import {
-  IconActivity,
-  IconBolt,
   IconBroadcast,
   IconChevronDown,
   IconChevronUp,
@@ -43,11 +43,15 @@ import {
   IconDownload,
   IconEye,
   IconFileImport,
+  IconFlask2,
+  IconFolder,
   IconFolderOpen,
   IconGitCompare,
+  IconHandClick,
   IconLayoutDashboard,
   IconLock,
   IconMoon,
+  IconNetwork,
   IconRss,
   IconPlayerPlay,
   IconPlayerStop,
@@ -58,6 +62,7 @@ import {
   IconSun,
   IconPlugConnectedX,
   IconTrash,
+  IconWaveSine,
 } from "@tabler/icons-react";
 import { TreeView } from "./components/TreeView";
 import { DetailPanel } from "./components/DetailPanel";
@@ -131,6 +136,22 @@ function Waveform({ series, show }: { series: number[][]; show: boolean[] }) {
     const H = c.height;
     ctx.clearRect(0, 0, W, H);
 
+    // Retícula de osciloscopio (4 divisiones verticales, 8 horizontales).
+    ctx.strokeStyle = "rgba(128,128,128,0.12)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 4; i++) {
+      const gy = (i / 4) * H;
+      ctx.moveTo(0, gy);
+      ctx.lineTo(W, gy);
+    }
+    for (let i = 1; i < 8; i++) {
+      const gx = (i / 8) * W;
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, H);
+    }
+    ctx.stroke();
+
     let min = Infinity;
     let max = -Infinity;
     let len = 0;
@@ -187,7 +208,7 @@ function Waveform({ series, show }: { series: number[][]; show: boolean[] }) {
         height: 260,
         background: "var(--mantine-color-body)",
         border: "1px solid var(--mantine-color-default-border)",
-        borderRadius: 8,
+        borderRadius: 4,
       }}
     />
   );
@@ -218,14 +239,47 @@ type SStat = { key: string; rate: number; jitter: number; count: number; lost: n
 
 function StatCard({ title, value }: { title: string; value: ReactNode }) {
   return (
-    <Card withBorder padding="sm" radius="md">
-      <Text size="xs" c="dimmed">
+    <Card withBorder padding="md" radius="md" className="lift">
+      <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: 0.4 }}>
         {title}
       </Text>
-      <Text size="lg" fw={700} truncate style={{ lineHeight: 1.2 }}>
+      <Text size="xl" fw={700} truncate style={{ lineHeight: 1.2, marginTop: 4 }}>
         {value}
       </Text>
     </Card>
+  );
+}
+
+/** Metadatos de cada sección: cabecera, rail y la parte de la norma que ejercita. */
+const SECTION_META: Record<string, { title: string; desc: string; norm: string; icon: ReactNode }> = {
+  resumen: { title: "Resumen", desc: "Vista general del IED y su modelo de datos", norm: "IEC 61850-7-1 · Modelo", icon: <IconLayoutDashboard size={22} /> },
+  datos: { title: "Datos", desc: "Navega el modelo y lee atributos con calidad y marca de tiempo", norm: "IEC 61850-8-1 · MMS", icon: <IconDatabase size={22} /> },
+  reportes: { title: "Reportes", desc: "Habilita RCBs y observa los InformationReport en vivo", norm: "IEC 61850-8-1 · RCB", icon: <IconBroadcast size={22} /> },
+  control: { title: "Control", desc: "Operar y escribir (con confirmación) sobre el IED", norm: "IEC 61850-7-2 · Control", icon: <IconHandClick size={22} /> },
+  watch: { title: "Vigilar", desc: "Lista curada de atributos con sondeo periódico", norm: "IEC 61850-8-1 · Sondeo", icon: <IconEye size={22} /> },
+  goose: { title: "GOOSE", desc: "Monitor, estadísticas y publicación (con simulación Ed.2)", norm: "IEC 61850-8-1 · GOOSE", icon: <IconRss size={22} /> },
+  sv: { title: "Sampled Values", desc: "Monitor 9-2LE con forma de onda y simulación Ed.2", norm: "IEC 61850-9-2LE", icon: <IconWaveSine size={22} /> },
+  comparar: { title: "Comparar SCL ↔ online", desc: "Diferencias entre el archivo de ingeniería y el dispositivo", norm: "IEC 61850-6 · SCL", icon: <IconGitCompare size={22} /> },
+  ficheros: { title: "Ficheros del IED", desc: "Registros de perturbación, COMTRADE y logs (file transfer MMS)", norm: "IEC 61850-8-1 · Ficheros", icon: <IconFolder size={22} /> },
+};
+
+/** Cabecera de sección: eyebrow normativo + título + regla con terminal de cobre. */
+function SectionHeading({ activeTab }: { activeTab: string | null }) {
+  const meta = (activeTab && SECTION_META[activeTab]) || SECTION_META.resumen;
+  return (
+    <Group gap="sm" mb="md" wrap="nowrap">
+      <Box c="brand" style={{ display: "flex" }}>{meta.icon}</Box>
+      <div>
+        <span className="section-eyebrow">{meta.norm}</span>
+        <Title order={4} style={{ lineHeight: 1.15 }}>
+          {meta.title}
+        </Title>
+        <Text size="xs" c="dimmed">
+          {meta.desc}
+        </Text>
+      </div>
+      <div className="section-rule" />
+    </Group>
   );
 }
 
@@ -325,7 +379,7 @@ export default function App() {
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light");
 
-  const [addr, setAddr] = useState("127.0.0.1:10102");
+  const [addr, setAddr] = useState("");
   const [conns, setConns] = useState<ConnInfo[]>([]);
   const connected = conns.length > 0;
   const [status, setStatus] = useState("desconectado");
@@ -339,7 +393,6 @@ export default function App() {
   const [l2Scanning, setL2Scanning] = useState(false);
   const [l2Results, setL2Results] = useState<PubInfo[]>([]);
   const [simAddr, setSimAddr] = useState<string | null>(null);
-  const booted = useRef(false);
 
   // TLS / mTLS (IEC 62351-3).
   const CERT_DIR = "/home/kelecho/apps/iec_61850/apps/iec61850-tauri/test-certs";
@@ -359,7 +412,7 @@ export default function App() {
     name: string;
     members: Array<{ index: number; reference: string; fc: string; ty: string | null }>;
   } | null>(null);
-  const [treeSource, setTreeSource] = useState<"online" | "scl">("online");
+  const [treeSource, setTreeSource] = useState<"online" | "scl">("scl");
   const [sclPath, setSclPath] = useState("/home/kelecho/apps/iec_61850/fixtures/icd/simple.icd");
   const [sclTree, setSclTree] = useState<TreeNode[]>([]);
   const [reportMembers, setReportMembers] = useState<string[]>([]);
@@ -609,27 +662,6 @@ export default function App() {
       );
     }, 1000);
     return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (booted.current) return;
-    booted.current = true;
-    (async () => {
-      try {
-        const a = await invoke<string>("sim_start");
-        setSimAddr(a);
-        setAddr(a);
-        const neg = await invoke<string>("connect", { addr: a });
-        setStatus(neg);
-        await refreshConns();
-        setDomains(await invoke<DomainItems[]>("discover"));
-        await invoke("enable_report", { rcb });
-        ok("simulador, conexión y reportes listos");
-      } catch (e) {
-        fail(e);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Polling continuo: refresca en vivo la watch-list curada.
@@ -894,15 +926,27 @@ export default function App() {
       fail(e);
     }
   }
-  async function sclLoad() {
+  async function sclLoad(path?: string) {
+    const p = path ?? sclPath;
+    if (!p) return;
     try {
-      const t = await invoke<TreeNode[]>("scl_load", { path: sclPath });
+      const t = await invoke<TreeNode[]>("scl_load", { path: p });
       setSclTree(t);
+      setSclPath(p);
       setTreeSource("scl");
-      ok("SCL cargado");
+      setActiveTab("datos");
+      ok(`SCL cargado: ${p.split(/[\\/]/).pop()}`);
     } catch (e) {
       fail(e);
     }
+  }
+  // Acción primaria: abrir un archivo SCL real (.cid/.icd/.scd) y mostrar su modelo.
+  async function openSclDialog() {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Archivos SCL", extensions: ["cid", "icd", "scd", "iid", "ssd", "xml"] }],
+    });
+    if (typeof path === "string") await sclLoad(path);
   }
   // Mapea las entradas de los reportes a nombres de miembro del dataset (vía SCL).
   async function mapMembers() {
@@ -1170,29 +1214,27 @@ export default function App() {
   }
 
   return (
-    <AppShell header={{ height: 56 }} navbar={{ width: 380, breakpoint: 0 }} footer={{ height: 28 }} padding="sm">
-      <AppShell.Header px="sm">
-        <Group h="100%" gap="xs" wrap="nowrap">
-          <IconBolt size={20} color="var(--mantine-color-yellow-7)" />
-          <Title order={5}>IEC 61850 — Cliente MMS</Title>
+    <>
+      <div className="ide-root">
+        <div className="ide-commandbar">
+          <div className="ide-brand">
+            <span className="ide-brand-mark">
+              <IconNetwork size={17} />
+            </span>
+            IEC 61850 Studio
+          </div>
           <Divider orientation="vertical" />
-          {simAddr ? (
-            <Button size="xs" variant="light" color="red" leftSection={<IconPlayerStop size={14} />} onClick={stopSim}>
-              Simulador
-            </Button>
-          ) : (
-            <Button size="xs" variant="light" color="green" leftSection={<IconPlayerPlay size={14} />} onClick={startSim}>
-              Simulador
-            </Button>
-          )}
+          <Button size="xs" variant="light" leftSection={<IconFileImport size={14} />} onClick={openSclDialog}>
+            Abrir SCL
+          </Button>
           <Divider orientation="vertical" />
           <TextInput
             size="xs"
-            w={170}
+            w={180}
             value={addr}
             disabled={connected}
             onChange={(e) => setAddr(e.currentTarget.value)}
-            placeholder="IED  (ip:puerto)"
+            placeholder="IED  192.168.1.10:102"
           />
           <ActionIcon size="lg" variant="default" title="Buscar IEDs en la red" onClick={() => setScanOpen(true)}>
             <IconScan size={16} />
@@ -1303,6 +1345,38 @@ export default function App() {
             <Badge color={connected ? "teal" : "gray"} variant="light">
               {connected ? status : "desconectado"}
             </Badge>
+            <Popover width={300} position="bottom-end" withArrow shadow="md">
+              <Popover.Target>
+                <ActionIcon
+                  variant={simAddr ? "filled" : "default"}
+                  color={simAddr ? "grape" : "gray"}
+                  size="lg"
+                  title="Entorno de pruebas (simulador sin hardware)"
+                >
+                  <IconFlask2 size={16} />
+                </ActionIcon>
+              </Popover.Target>
+              <Popover.Dropdown>
+                <Stack gap="xs">
+                  <Text fw={600} size="sm">
+                    Entorno de pruebas
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Arranca un IED simulado en local para probar sin hardware. No es
+                    necesario para el uso normal (abre un SCL o conecta a un IED real).
+                  </Text>
+                  {simAddr ? (
+                    <Button size="xs" variant="light" color="red" leftSection={<IconPlayerStop size={14} />} onClick={stopSim}>
+                      Detener simulador ({simAddr})
+                    </Button>
+                  ) : (
+                    <Button size="xs" variant="light" color="grape" leftSection={<IconPlayerPlay size={14} />} onClick={startSim}>
+                      Iniciar simulador local
+                    </Button>
+                  )}
+                </Stack>
+              </Popover.Dropdown>
+            </Popover>
             <ActionIcon
               variant="default"
               size="lg"
@@ -1312,11 +1386,45 @@ export default function App() {
               {scheme === "dark" ? <IconSun size={16} /> : <IconMoon size={16} />}
             </ActionIcon>
           </Group>
-        </Group>
-      </AppShell.Header>
-
-      <AppShell.Navbar p="xs">
-        <Stack gap={6} h="100%">
+        </div>
+        <div className="ide-body">
+          <nav className="ide-rail">
+            {[
+              { v: "resumen", label: "Resumen", icon: <IconLayoutDashboard size={20} />, n: 0 },
+              { v: "datos", label: "Datos", icon: <IconDatabase size={20} />, n: 0 },
+              { v: "reportes", label: "Reportes", icon: <IconBroadcast size={20} />, n: reports.length },
+              { v: "control", label: "Control", icon: <IconHandClick size={20} />, n: 0 },
+              { v: "watch", label: "Vigilar", icon: <IconEye size={20} />, n: watch.length },
+              { v: "goose", label: "GOOSE", icon: <IconRss size={20} />, n: gooseRows.length },
+              { v: "sv", label: "Sampled Values", icon: <IconWaveSine size={20} />, n: svRows.length },
+              { v: "comparar", label: "Comparar SCL↔online", icon: <IconGitCompare size={20} />, n: 0 },
+              { v: "ficheros", label: "Ficheros del IED", icon: <IconFolder size={20} />, n: files.length },
+            ].map((s) => (
+              <Tooltip key={s.v} label={s.label} position="right">
+                <ActionIcon
+                  className="ide-rail-btn"
+                  size="xl"
+                  radius="md"
+                  variant={activeTab === s.v ? "filled" : "subtle"}
+                  color={activeTab === s.v ? "brand" : "gray"}
+                  data-active={activeTab === s.v || undefined}
+                  onClick={() => setActiveTab(s.v)}
+                >
+                  {s.n ? (
+                    <Indicator label={s.n} size={15} color="brand" offset={4}>
+                      {s.icon}
+                    </Indicator>
+                  ) : (
+                    s.icon
+                  )}
+                </ActionIcon>
+              </Tooltip>
+            ))}
+          </nav>
+          <PanelGroup direction="horizontal" autoSaveId="ide-layout" style={{ flex: 1, minHeight: 0 }}>
+            <Panel id="nav" defaultSize={26} minSize={14} maxSize={48}>
+              <div className="ide-nav">
+                <Stack gap={6} h="100%">
           <SegmentedControl
             size="xs"
             fullWidth
@@ -1353,7 +1461,7 @@ export default function App() {
                   <ActionIcon variant="default" size="lg" title="Examinar…" onClick={() => pickInto(setSclPath, "SCL", ["icd", "cid", "scd", "xml"])}>
                     <IconFolderOpen size={16} />
                   </ActionIcon>
-                  <ActionIcon variant="default" size="lg" onClick={sclLoad} title="Cargar SCL">
+                  <ActionIcon variant="default" size="lg" onClick={() => sclLoad()} title="Cargar SCL">
                     <IconFileImport size={16} />
                   </ActionIcon>
                 </Group>
@@ -1421,40 +1529,14 @@ export default function App() {
               </Stack>
             </ScrollArea>
           )}
-        </Stack>
-      </AppShell.Navbar>
-
-      <AppShell.Main>
-        <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
-          <Tabs.List>
-            <Tabs.Tab value="resumen" leftSection={<IconLayoutDashboard size={14} />}>
-              Resumen
-            </Tabs.Tab>
-            <Tabs.Tab value="datos" leftSection={<IconDatabase size={14} />}>
-              Datos
-            </Tabs.Tab>
-            <Tabs.Tab value="reportes" leftSection={<IconBroadcast size={14} />}>
-              Reportes{reports.length ? ` (${reports.length})` : ""}
-            </Tabs.Tab>
-            <Tabs.Tab value="control" leftSection={<IconBolt size={14} />}>
-              Control
-            </Tabs.Tab>
-            <Tabs.Tab value="watch" leftSection={<IconEye size={14} />}>
-              Vigilar{watch.length ? ` (${watch.length})` : ""}
-            </Tabs.Tab>
-            <Tabs.Tab value="goose" leftSection={<IconRss size={14} />}>
-              GOOSE{gooseRows.length ? ` (${gooseRows.length})` : ""}
-            </Tabs.Tab>
-            <Tabs.Tab value="sv" leftSection={<IconActivity size={14} />}>
-              SV{svRows.length ? ` (${svRows.length})` : ""}
-            </Tabs.Tab>
-            <Tabs.Tab value="comparar" leftSection={<IconGitCompare size={14} />}>
-              Comparar
-            </Tabs.Tab>
-            <Tabs.Tab value="ficheros" leftSection={<IconDownload size={14} />}>
-              Ficheros{files.length ? ` (${files.length})` : ""}
-            </Tabs.Tab>
-          </Tabs.List>
+                </Stack>
+              </div>
+            </Panel>
+            <PanelResizeHandle className="ide-resize" />
+            <Panel id="main" minSize={30}>
+              <div className="ide-main">
+                <SectionHeading activeTab={activeTab} />
+                <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
 
           <Tabs.Panel value="resumen" pt="sm">
             <Stack gap="md">
@@ -2347,28 +2429,23 @@ export default function App() {
             </Stack>
           </Tabs.Panel>
         </Tabs>
-      </AppShell.Main>
-
-      <AppShell.Footer px="sm">
-        <Group h="100%" gap="md">
-          <Text size="xs" c="dimmed">
-            {connected ? `Conectado a ${addr}` : "Sin conexión"}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Reportes: {reports.length}
-          </Text>
+              </div>
+            </Panel>
+          </PanelGroup>
+        </div>
+        <div className="ide-statusbar">
+          <span className="status-dot" data-off={!connected || undefined} />
+          <span>{connected ? `Conectado a ${addr}` : "Sin conexión"}</span>
+          <span>Reportes: {reports.length}</span>
           {polling && (
-            <Text size="xs" c="teal">
+            <span style={{ color: "var(--mantine-color-teal-6)" }}>
               Polling {Math.max(200, pollMs)}ms · {watch.length} ref
-            </Text>
+            </span>
           )}
-          {simAddr && (
-            <Text size="xs" c="dimmed">
-              Simulador: {simAddr}
-            </Text>
-          )}
-        </Group>
-      </AppShell.Footer>
+          {simAddr && <span>Simulador: {simAddr}</span>}
+          <span style={{ marginLeft: "auto" }}>IEC 61850 Studio</span>
+        </div>
+      </div>
 
       <Modal opened={scanOpen} onClose={() => setScanOpen(false)} title="Buscar IEDs / publicadores" size="lg" centered>
         <SegmentedControl
@@ -2405,7 +2482,7 @@ export default function App() {
             Escanear
           </Button>
           <Text size="xs" c="dimmed">
-            Sondea .1–.254 e identifica (MMS). Sim embebido: puerto 10102.
+            Sondea .1–.254 del prefijo e identifica los IEDs por MMS (puerto 102 por defecto).
           </Text>
         </Group>
         <ScrollArea h={320} mt="sm">
@@ -2525,6 +2602,6 @@ export default function App() {
           </Button>
         </Group>
       </Modal>
-    </AppShell>
+    </>
   );
 }

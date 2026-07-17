@@ -14,8 +14,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.1.0",
-    "@fontsource-variable/montserrat": "^5.1.0",
     "@mantine/core": "^7.15.0",
     "@mantine/hooks": "^7.15.0",
     "@mantine/notifications": "^7.15.0",
@@ -23,7 +23,8 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-resizable-panels": "^2.1.9"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
