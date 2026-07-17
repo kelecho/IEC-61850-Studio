@@ -1,0 +1,3 @@
+# Formato del workspace: defaults de rustfmt estable, fijados explícitamente
+# para que todos los entornos (desarrolladores y CI) usen la misma referencia.
+style_edition = "2024"

@@ -1,0 +1,2 @@
+# Clippy respeta la MSRV del workspace: no sugerirá APIs posteriores a 1.85.
+msrv = "1.85"

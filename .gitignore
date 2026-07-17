@@ -3,5 +3,13 @@ Cargo.lock
 **/*.rs.bk
 .DS_Store
 
+# Fuzzing (cargo-fuzz): artefactos y corpus generado; se conservan las semillas.
+/fuzz/target
+/fuzz/artifacts
+/fuzz/Cargo.lock
+
 # Configuración local de Claude Code
 .claude/
+
+# Base de datos de estado generada en runtime por el servidor/simulador
+log_status.db

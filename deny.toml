@@ -1,0 +1,58 @@
+# Configuración de cargo-deny: advisories de seguridad, licencias y fuentes.
+# Se ejecuta en CI (workflow supply-chain) y localmente con `cargo deny check`.
+
+[graph]
+# Auditamos el grafo completo (todas las features que puede activar un usuario).
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Solo alertar de crates sin mantenimiento cuando son dependencia directa:
+# el stack GTK3 que arrastra Tauri en Linux es transitivo e inevitable hasta
+# que Tauri migre (se revisa en cada actualización de Tauri).
+unmaintained = "workspace"
+ignore = [
+  # quick-xml 0.39 transitivo vía plist→tauri-utils: parsea config propia de
+  # Tauri en build, no entrada no confiable. Nuestros crates usan ≥0.41
+  # (parcheado). Revisar al actualizar Tauri.
+  { id = "RUSTSEC-2026-0194", reason = "solo alcanzable vía plist/tauri-utils con entrada confiable" },
+  { id = "RUSTSEC-2026-0195", reason = "solo alcanzable vía plist/tauri-utils con entrada confiable" },
+]
+
+[licenses]
+version = 2
+# Solo licencias permisivas compatibles con distribución comercial.
+# MPL-2.0 es copyleft débil por-fichero: aceptable mientras no se modifiquen
+# esos crates. OFL/Ubuntu-font provienen de las fuentes embebidas de egui.
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "BSL-1.0",
+  "CC0-1.0",
+  "0BSD",
+  "Zlib",
+  "Unicode-3.0",
+  "Unlicense",
+  "MPL-2.0",
+  "OFL-1.1",
+  "Ubuntu-font-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicados de versiones: aviso (romperlo del todo es impracticable con GUIs).
+multiple-versions = "warn"
+wildcards = "deny"
+# Las deps internas por path (apps → crates) no llevan versión: son publish=false.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

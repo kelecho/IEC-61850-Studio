@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "apps/iec61850-gui", "apps/iec61850-tauri/src-tauri"]
+members = ["crates/*", "apps/iec61850-gui", "apps/iec61850-sim", "apps/iec61850-tauri/src-tauri"]
 # Las librerías se compilan/testean por defecto; las apps (eframe / Tauri) sólo
 # bajo demanda con `-p`, para no arrastrar sus árboles de deps al workspace.
 default-members = ["crates/*"]
@@ -17,6 +17,13 @@ keywords = ["iec61850", "scada", "substation", "mms", "goose"]
 categories = ["network-programming", "embedded"]
 rust-version = "1.85"
 
+[workspace.lints.rust]
+# Los crates de librería lo heredan con `[lints] workspace = true`.
+# iec61850-l2 es la única excepción a unsafe_code (syscalls AF_PACKET) y
+# define sus lints propios en su Cargo.toml.
+unsafe_code = "forbid"
+missing_docs = "warn"
+
 [workspace.dependencies]
 # Crates internos
 iec61850-model = { path = "crates/iec61850-model", version = "0.1.0" }
@@ -30,7 +37,8 @@ iec61850-sv = { path = "crates/iec61850-sv", version = "0.1.0" }
 # Externos
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
-quick-xml = { version = "0.37", features = ["serialize"] }
+# ≥0.41: corrige RUSTSEC de DoS en NsReader y coste cuadrático de atributos.
+quick-xml = { version = "0.41", features = ["serialize"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 

@@ -8,9 +8,10 @@ publicación es **irreversible** (una versión publicada no se puede borrar, sol
 
 1. **Repositorio:** edita `repository`/`homepage` en `Cargo.toml` (`[workspace.package]`),
    hoy con el placeholder `https://github.com/USUARIO/iec61850`. crates.io enlaza ahí.
-2. **CI:** aún no hay (se eligió posponerla). Recomendado antes de publicar: un
-   workflow con `cargo fmt --check`, `cargo clippy -D warnings`, los tests del
-   workspace y `cargo doc`. Ver "Comandos de validación" abajo para las invocaciones.
+2. **CI:** en `.github/workflows/` — `ci.yml` (fmt, clippy, tests multi-OS,
+   matriz de features con cargo-hack, MSRV, rustdoc, cobertura, semver-checks),
+   `supply-chain.yml` (cargo-deny/cargo-audit, diario) y `release.yml` (SBOM
+   CycloneDX + checksums al taggear `v*`). Todo debe estar verde antes de publicar.
 3. **Cuenta y token:** `cargo login <token>` (token de https://crates.io/me).
 4. Revisa que cada `Cargo.toml` tiene `description`, `license` y `repository`
    (heredados del workspace) — requisito de crates.io.
