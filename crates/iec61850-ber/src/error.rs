@@ -25,4 +25,6 @@ pub enum BerError {
     TrailingData,
     #[error("estructura BER inesperada: {0}")]
     Structure(String),
+    #[error("anidamiento BER excede el máximo permitido")]
+    DepthExceeded,
 }

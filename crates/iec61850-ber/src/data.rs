@@ -66,9 +66,23 @@ pub enum MmsData {
     Array(Vec<MmsData>),
 }
 
+/// Profundidad máxima de anidamiento aceptada al decodificar `Data`.
+///
+/// Los datos IEC 61850 reales rara vez superan ~10 niveles (DO→SDO→DA→BDA).
+/// El límite corta un DoS por desbordamiento de pila: sin él, un peer hostil
+/// puede anidar miles de `structure` en una sola PDU y tumbar el proceso.
+pub const MAX_NESTING_DEPTH: usize = 32;
+
 impl MmsData {
     /// Decodifica un `Data` desde un TLV ya leído.
+    ///
+    /// Rechaza con [`BerError::DepthExceeded`] anidamientos de más de
+    /// [`MAX_NESTING_DEPTH`] niveles (protección frente a entrada hostil).
     pub fn decode(tlv: &Tlv<'_>) -> Result<MmsData, BerError> {
+        Self::decode_at(tlv, 0)
+    }
+
+    fn decode_at(tlv: &Tlv<'_>, depth: usize) -> Result<MmsData, BerError> {
         let c = tlv.content;
         let t = tlv.tag;
         let unexpected = || BerError::Structure(format!("tag Data inesperado: {t}"));
@@ -96,8 +110,8 @@ impl MmsData {
                     .map_err(|_| BerError::Structure("utc-time debe tener 8 octetos".into()))?;
                 Ok(MmsData::Utc(UtcTime { raw }))
             }
-            (2, true) => Ok(MmsData::Structure(decode_list(c)?)),
-            (1, true) => Ok(MmsData::Array(decode_list(c)?)),
+            (2, true) => Ok(MmsData::Structure(decode_list(c, depth)?)),
+            (1, true) => Ok(MmsData::Array(decode_list(c, depth)?)),
             _ => Err(unexpected()),
         }
     }
@@ -157,12 +171,15 @@ impl MmsData {
     }
 }
 
-fn decode_list(content: &[u8]) -> Result<Vec<MmsData>, BerError> {
+fn decode_list(content: &[u8], depth: usize) -> Result<Vec<MmsData>, BerError> {
+    if depth >= MAX_NESTING_DEPTH {
+        return Err(BerError::DepthExceeded);
+    }
     let mut r = BerReader::new(content);
     let mut out = Vec::new();
     while !r.is_empty() {
         let tlv = r.read_tlv()?;
-        out.push(MmsData::decode(&tlv)?);
+        out.push(MmsData::decode_at(&tlv, depth + 1)?);
     }
     Ok(out)
 }
@@ -255,6 +272,30 @@ mod tests {
             MmsData::Structure(vec![MmsData::Visible("x".into())]),
         ]);
         round(s);
+    }
+
+    #[test]
+    fn deep_nesting_rejected() {
+        // Bytes crafteados: N structures anidadas (0xA2 = context 2 constructed)
+        // con un boolean dentro. Con N > MAX_NESTING_DEPTH debe rechazarse sin
+        // reventar la pila; con N pequeño debe decodificar.
+        fn nested(n: usize) -> Vec<u8> {
+            let mut bytes = vec![0x83, 0x01, 0xFF]; // boolean [3] true
+            for _ in 0..n {
+                let mut wrapped = vec![0xA2];
+                crate::ber::length::encode_len(&mut wrapped, bytes.len());
+                wrapped.extend_from_slice(&bytes);
+                bytes = wrapped;
+            }
+            bytes
+        }
+        assert!(decode_data(&nested(4)).is_ok());
+        assert_eq!(
+            decode_data(&nested(MAX_NESTING_DEPTH + 1)),
+            Err(BerError::DepthExceeded)
+        );
+        // Caso extremo: miles de niveles en pocos KB — el motivo real del límite.
+        assert_eq!(decode_data(&nested(20_000)), Err(BerError::DepthExceeded));
     }
 
     #[test]
