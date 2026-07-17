@@ -9,7 +9,6 @@ use std::time::Duration;
 use iec61850::Model;
 use iec61850::ObjectReference;
 use iec61850::goose::socket::RawSocket;
-use iec61850::model::{DataAttribute, DataObject};
 use iec61850::goose::{
     ETHERTYPE_GOOSE, GooseConfig, GooseEventKind, GooseFilter, GooseLink, GoosePublisher,
     GooseSubscriber, PcapWriter,
@@ -19,6 +18,7 @@ use iec61850::mms::{
     IdentifyResponse, MmsClient, MmsData, MmsServer, Report, ServerModel, TlsClientOptions,
     TlsServerOptions,
 };
+use iec61850::model::{DataAttribute, DataObject};
 use iec61850::sv::{
     ETHERTYPE_SV, NineTwoLe, SvChannel, SvConfig, SvEventKind, SvFilter, SvPublisher, SvSubscriber,
 };
@@ -120,7 +120,10 @@ impl ReportPayload {
             entries: r
                 .entries
                 .iter()
-                .map(|e| EntryP { index: e.member_index, value: fmt_value(&e.value) })
+                .map(|e| EntryP {
+                    index: e.member_index,
+                    value: fmt_value(&e.value),
+                })
                 .collect(),
         }
     }
@@ -175,7 +178,11 @@ fn parse_ref(s: &str) -> Result<ObjectReference, String> {
 }
 
 #[tauri::command]
-async fn connect(app: AppHandle, state: State<'_, AppState>, addr: String) -> Result<String, String> {
+async fn connect(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    addr: String,
+) -> Result<String, String> {
     let mut c = MmsClient::connect(&addr).await.map_err(|e| e.to_string())?;
     let neg = format!("asociado (MMS v{})", c.negotiated().version);
     let id = addr.clone();
@@ -189,7 +196,13 @@ async fn connect(app: AppHandle, state: State<'_, AppState>, addr: String) -> Re
             }
         });
     }
-    state.clients.lock().await.insert(id.clone(), Conn { client: Arc::new(c), tls: false });
+    state.clients.lock().await.insert(
+        id.clone(),
+        Conn {
+            client: Arc::new(c),
+            tls: false,
+        },
+    );
     *state.active.lock().await = Some(id);
     Ok(neg)
 }
@@ -224,7 +237,13 @@ async fn connect_tls(
             }
         });
     }
-    state.clients.lock().await.insert(id.clone(), Conn { client: Arc::new(c), tls: true });
+    state.clients.lock().await.insert(
+        id.clone(),
+        Conn {
+            client: Arc::new(c),
+            tls: true,
+        },
+    );
     *state.active.lock().await = Some(id);
     Ok(neg)
 }
@@ -306,7 +325,11 @@ async fn capture_pcap(
     let file = std::fs::File::create(&path).map_err(|e| format!("crear {path}: {e}"))?;
     let mut pcap = PcapWriter::new(std::io::BufWriter::new(file))
         .map_err(|e| format!("cabecera pcap: {e}"))?;
-    let frames = if frames == 0 { 500 } else { frames.min(100_000) };
+    let frames = if frames == 0 {
+        500
+    } else {
+        frames.min(100_000)
+    };
     let secs = if secs == 0 { 15 } else { secs.min(300) };
     let deadline = tokio::time::Instant::now() + Duration::from_secs(secs);
     let mut n = 0usize;
@@ -365,7 +388,10 @@ async fn download_file(
     dest: String,
 ) -> Result<usize, String> {
     let client = current(&state).await?;
-    let data = client.download_file(&name).await.map_err(|e| e.to_string())?;
+    let data = client
+        .download_file(&name)
+        .await
+        .map_err(|e| e.to_string())?;
     let len = data.len();
     std::fs::write(&dest, &data).map_err(|e| format!("guardar {dest}: {e}"))?;
     Ok(len)
@@ -409,7 +435,8 @@ async fn scan_network(base: String, port: u16) -> Result<Vec<FoundIed>, String> 
             }
             // Asocia MMS e Identify (puede fallar si no es un IED MMS).
             let (vendor, model, revision) =
-                match tokio::time::timeout(Duration::from_secs(3), MmsClient::connect(&addr)).await {
+                match tokio::time::timeout(Duration::from_secs(3), MmsClient::connect(&addr)).await
+                {
                     Ok(Ok(c)) => {
                         match tokio::time::timeout(Duration::from_secs(2), c.identify()).await {
                             Ok(Ok(id)) => (Some(id.vendor), Some(id.model), Some(id.revision)),
@@ -418,7 +445,12 @@ async fn scan_network(base: String, port: u16) -> Result<Vec<FoundIed>, String> 
                     }
                     _ => (None, None, None),
                 };
-            Some(FoundIed { addr, vendor, model, revision })
+            Some(FoundIed {
+                addr,
+                vendor,
+                model,
+                revision,
+            })
         }));
     }
     let mut found = Vec::new();
@@ -469,16 +501,20 @@ async fn discover_l2(iface: String, secs: u64) -> Result<Vec<PubInfo>, String> {
         let mut sub = GooseSubscriber::new(g_sock, GooseFilter::default()).start();
         while let Some(ev) = sub.recv_event().await {
             let key = format!("GOOSE:{}", ev.gocb_ref);
-            fg.lock().await.entry(key).and_modify(|e| e.count += 1).or_insert(PubInfo {
-                kind: "GOOSE".into(),
-                id: ev.gocb_ref,
-                label: ev.go_id,
-                dat_set: ev.dat_set,
-                appid: ev.appid,
-                src: mac(&ev.src),
-                conf_rev: ev.conf_rev,
-                count: 1,
-            });
+            fg.lock()
+                .await
+                .entry(key)
+                .and_modify(|e| e.count += 1)
+                .or_insert(PubInfo {
+                    kind: "GOOSE".into(),
+                    id: ev.gocb_ref,
+                    label: ev.go_id,
+                    dat_set: ev.dat_set,
+                    appid: ev.appid,
+                    src: mac(&ev.src),
+                    conf_rev: ev.conf_rev,
+                    count: 1,
+                });
         }
     });
     let fs = found.clone();
@@ -486,16 +522,20 @@ async fn discover_l2(iface: String, secs: u64) -> Result<Vec<PubInfo>, String> {
         let mut sub = SvSubscriber::new(s_sock, SvFilter::default()).start();
         while let Some(ev) = sub.recv_sample().await {
             let key = format!("SV:{}", ev.sv_id);
-            fs.lock().await.entry(key).and_modify(|e| e.count += 1).or_insert(PubInfo {
-                kind: "SV".into(),
-                id: ev.sv_id,
-                label: String::new(),
-                dat_set: String::new(),
-                appid: ev.appid,
-                src: mac(&ev.src),
-                conf_rev: ev.conf_rev,
-                count: 1,
-            });
+            fs.lock()
+                .await
+                .entry(key)
+                .and_modify(|e| e.count += 1)
+                .or_insert(PubInfo {
+                    kind: "SV".into(),
+                    id: ev.sv_id,
+                    label: String::new(),
+                    dat_set: String::new(),
+                    appid: ev.appid,
+                    src: mac(&ev.src),
+                    conf_rev: ev.conf_rev,
+                    count: 1,
+                });
         }
     });
 
@@ -544,7 +584,10 @@ async fn read_do(
     t: Option<String>,
 ) -> Result<DoReading, String> {
     let c = current(&state).await?;
-    let val = c.read(&parse_ref(&value)?).await.map_err(|e| e.to_string())?;
+    let val = c
+        .read(&parse_ref(&value)?)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut reading = DoReading {
         value: fmt_value(&val),
@@ -664,10 +707,22 @@ async fn rcb_write(
         write_attr(&c, &rcb, "BufTm", MmsData::Uint(b)).await?;
     }
     if let Some(bits) = trg_ops {
-        write_attr(&c, &rcb, "TrgOps", MmsData::BitString(BitString::from_bits(&bits))).await?;
+        write_attr(
+            &c,
+            &rcb,
+            "TrgOps",
+            MmsData::BitString(BitString::from_bits(&bits)),
+        )
+        .await?;
     }
     if let Some(bits) = opt_flds {
-        write_attr(&c, &rcb, "OptFlds", MmsData::BitString(BitString::from_bits(&bits))).await?;
+        write_attr(
+            &c,
+            &rcb,
+            "OptFlds",
+            MmsData::BitString(BitString::from_bits(&bits)),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -848,7 +903,10 @@ fn list_interfaces() -> Vec<String> {
 
 /// Formatea una MAC (`[u8; 6]`) como `aa:bb:cc:dd:ee:ff`.
 fn mac(m: &[u8; 6]) -> String {
-    format!("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", m[0], m[1], m[2], m[3], m[4], m[5])
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        m[0], m[1], m[2], m[3], m[4], m[5]
+    )
 }
 
 /// Evento GOOSE serializado para el frontend.
@@ -875,7 +933,10 @@ struct GoosePayload {
 /// Nº de tramas perdidas según el tipo de evento (salto de sqNum).
 fn goose_lost(k: &GooseEventKind) -> u32 {
     match k {
-        GooseEventKind::LossSuspected { expected_sq, got_sq } => got_sq.saturating_sub(*expected_sq),
+        GooseEventKind::LossSuspected {
+            expected_sq,
+            got_sq,
+        } => got_sq.saturating_sub(*expected_sq),
         _ => 0,
     }
 }
@@ -884,10 +945,14 @@ fn goose_kind(k: &GooseEventKind) -> String {
     match k {
         GooseEventKind::StateChange => "stChange".into(),
         GooseEventKind::Retransmission => "retx".into(),
-        GooseEventKind::LossSuspected { expected_sq, got_sq } => {
+        GooseEventKind::LossSuspected {
+            expected_sq,
+            got_sq,
+        } => {
             format!("loss(esp {expected_sq}, recibido {got_sq})")
         }
         GooseEventKind::Expired => "expirado".into(),
+        GooseEventKind::AuthFailed { .. } => "auth-fallida".into(),
     }
 }
 
@@ -974,8 +1039,11 @@ fn sv_lost(k: &SvEventKind) -> u32 {
 fn sv_kind(k: &SvEventKind) -> String {
     match k {
         SvEventKind::Sample => "sample".into(),
-        SvEventKind::SampleLoss { expected, got } => format!("loss(esp {expected}, recibido {got})"),
+        SvEventKind::SampleLoss { expected, got } => {
+            format!("loss(esp {expected}, recibido {got})")
+        }
         SvEventKind::Wrap => "wrap".into(),
+        SvEventKind::AuthFailed { .. } => "auth-fallida".into(),
     }
 }
 
@@ -996,7 +1064,10 @@ async fn sv_start(
             let channels = ev.decoded_9_2le.map(|n| {
                 n.channels
                     .iter()
-                    .map(|c| SvChan { value: c.value, quality: c.quality })
+                    .map(|c| SvChan {
+                        value: c.value,
+                        quality: c.quality,
+                    })
                     .collect()
             });
             let _ = app.emit(
@@ -1052,7 +1123,12 @@ async fn goose_pub_start(
         let mut on = false;
         loop {
             on = !on;
-            let _ = pubh.publish(vec![MmsData::Bool(on), MmsData::Int(if on { 1 } else { 0 })]).await;
+            let _ = pubh
+                .publish(vec![
+                    MmsData::Bool(on),
+                    MmsData::Int(if on { 1 } else { 0 }),
+                ])
+                .await;
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     });
@@ -1090,8 +1166,14 @@ async fn sv_pub_start(
         loop {
             t += 0.1;
             let mut n = NineTwoLe::default();
-            n.channels[0] = SvChannel { value: (1000.0 * t.sin()) as i32, quality: 0 };
-            n.channels[3] = SvChannel { value: (1000.0 * (t + 2.094).sin()) as i32, quality: 0 };
+            n.channels[0] = SvChannel {
+                value: (1000.0 * t.sin()) as i32,
+                quality: 0,
+            };
+            n.channels[3] = SvChannel {
+                value: (1000.0 * (t + 2.094).sin()) as i32,
+                quality: 0,
+            };
             pubh.set_9_2le(&n);
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -1151,15 +1233,26 @@ fn da_node(ld: &str, ln: &str, mut path: Vec<String>, da: &DataAttribute) -> Scl
         fc: Some(format!("{}", da.fc)),
         ty: Some(format!("{:?}", da.basic_type)),
         reference: leaf.then(|| format!("{ld}/{ln}.{joined}[{}]", da.fc)),
-        children: da.children.iter().map(|c| da_node(ld, ln, path.clone(), c)).collect(),
+        children: da
+            .children
+            .iter()
+            .map(|c| da_node(ld, ln, path.clone(), c))
+            .collect(),
     }
 }
 
 fn do_node(ld: &str, ln: &str, mut path: Vec<String>, dobj: &DataObject) -> SclNode {
     path.push(dobj.name.clone());
-    let mut children: Vec<SclNode> =
-        dobj.attributes.iter().map(|a| da_node(ld, ln, path.clone(), a)).collect();
-    children.extend(dobj.sub_objects.iter().map(|s| do_node(ld, ln, path.clone(), s)));
+    let mut children: Vec<SclNode> = dobj
+        .attributes
+        .iter()
+        .map(|a| da_node(ld, ln, path.clone(), a))
+        .collect();
+    children.extend(
+        dobj.sub_objects
+            .iter()
+            .map(|s| do_node(ld, ln, path.clone(), s)),
+    );
     SclNode {
         id: format!("{ld}/{ln}.{}", path.join(".")),
         label: dobj.name.clone(),
@@ -1176,7 +1269,10 @@ fn build_scl_tree(model: &Model) -> Vec<SclNode> {
     let mut roots = Vec::new();
     for (ied, server) in &model.ieds {
         for ld in &server.logical_devices {
-            let domain = ld.ld_name.clone().unwrap_or_else(|| format!("{ied}{}", ld.inst));
+            let domain = ld
+                .ld_name
+                .clone()
+                .unwrap_or_else(|| format!("{ied}{}", ld.inst));
             let lns: Vec<SclNode> = ld
                 .logical_nodes
                 .iter()
@@ -1239,10 +1335,17 @@ async fn scl_datasets(state: State<'_, AppState>) -> Result<Vec<DsInfo>, String>
     let mut out = Vec::new();
     for (ied, server) in &model.ieds {
         for ld in &server.logical_devices {
-            let domain = ld.ld_name.clone().unwrap_or_else(|| format!("{ied}{}", ld.inst));
+            let domain = ld
+                .ld_name
+                .clone()
+                .unwrap_or_else(|| format!("{ied}{}", ld.inst));
             for ln in &ld.logical_nodes {
                 for ds in &ln.data_sets {
-                    out.push(DsInfo { domain: domain.clone(), name: ds.name.clone(), count: ds.entries.len() });
+                    out.push(DsInfo {
+                        domain: domain.clone(),
+                        name: ds.name.clone(),
+                        count: ds.entries.len(),
+                    });
                 }
             }
         }
@@ -1339,9 +1442,18 @@ fn parse_value(kind: &str, text: &str) -> Result<MmsData, String> {
             "false" | "0" | "off" => Ok(MmsData::Bool(false)),
             _ => Err("bool: usa true/false".into()),
         },
-        "Int" => t.parse::<i64>().map(MmsData::Int).map_err(|e| e.to_string()),
-        "Uint" => t.parse::<u64>().map(MmsData::Uint).map_err(|e| e.to_string()),
-        "Float" => t.parse::<f64>().map(MmsData::Float).map_err(|e| e.to_string()),
+        "Int" => t
+            .parse::<i64>()
+            .map(MmsData::Int)
+            .map_err(|e| e.to_string()),
+        "Uint" => t
+            .parse::<u64>()
+            .map(MmsData::Uint)
+            .map_err(|e| e.to_string()),
+        "Float" => t
+            .parse::<f64>()
+            .map(MmsData::Float)
+            .map_err(|e| e.to_string()),
         "Text" => Ok(MmsData::Visible(text.to_string())),
         other => Err(format!("tipo desconocido: {other}")),
     }

@@ -1,0 +1,18 @@
+[package]
+name = "iec61850-sim"
+description = "Simulador de IED IEC 61850 (servidor MMS) que carga un SCL real y queda descubrible en la red."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "iec61850-sim"
+path = "src/main.rs"
+
+[dependencies]
+iec61850 = { path = "../../crates/iec61850", features = ["mms-server", "scl"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
+clap = { workspace = true }
+anyhow = { workspace = true }

@@ -173,6 +173,28 @@ prueba con `MockLink` y el reloj de tokio pausado. **Limitación:** a 4000 muest
 (250 µs) `tokio::time` no garantiza tiempo real duro (jitter) — adecuado para pruebas
 y tasas moderadas, no para protección.
 
+## Simulador de IED (`iec61850-sim`)
+
+[`apps/iec61850-sim`](apps/iec61850-sim) es un **simulador de IED** de línea de
+comandos: carga un archivo SCL **real**, arranca un servidor MMS y queda a la
+escucha en la red, listo para que una herramienta cliente lo **descubra** (p. ej.
+«Buscar IEDs»). Ideal para montar un **banco de pruebas sin hardware**.
+
+```sh
+# Un IED en el puerto estándar (102 requiere privilegios):
+sudo cargo run -p iec61850-sim -- --scl miIED.cid
+
+# Sin privilegios, sirviendo además registros por file transfer:
+cargo run -p iec61850-sim -- --scl miIED.icd --bind 0.0.0.0:10102 --files ./registros
+
+# Banco de varios IEDs (un proceso por puerto), luego descúbrelos con la app:
+cargo run -p iec61850-sim -- --scl ied1.cid --bind 0.0.0.0:10102 &
+cargo run -p iec61850-sim -- --scl ied2.cid --bind 0.0.0.0:10103 &
+```
+
+Autodetecta un *measurand* (`MX` flotante) y lo anima en vivo; opciones de
+`--vendor/--model/--revision`, `--vary`/`--no-vary`, `--files`.
+
 ## App de escritorio (demo)
 
 [`apps/iec61850-gui`](apps/iec61850-gui) es una app **egui** de demostración:
@@ -182,8 +204,8 @@ fuera de los `default-members`, así que no afecta a los builds/tests de las
 librerías.
 
 ```sh
-# Terminal 1 — IED simulado:
-cargo run --example ied_sim -p iec61850-mms --features server
+# Terminal 1 — un IED simulado en la red:
+cargo run -p iec61850-sim -- --scl fixtures/icd/simple.icd --bind 0.0.0.0:10102
 # Terminal 2 — la app:
 cargo run -p iec61850-gui
 ```
