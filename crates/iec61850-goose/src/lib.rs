@@ -33,12 +33,17 @@ pub mod socket {
 
 pub use config::GooseConfig;
 pub use error::GooseError;
-pub use frame::{ETHERTYPE_GOOSE, GooseFrame, MacAddr, VlanTag};
+pub use frame::{
+    AuthStatus, ETHERTYPE_GOOSE, GooseFrame, HmacKey, KeyEntry, KeyRing, MacAddr, Signer,
+    SignerRing, Verifier, VerifierRing, VlanTag,
+};
+#[cfg(feature = "ecdsa")]
+pub use frame::{EcdsaSigner, EcdsaVerifier};
 pub use pdu::GoosePdu;
 
 /// Conveniencia: el escritor PCAP de [`iec61850_l2`], para volcar capturas a
 /// disco desde apps que ya dependen de GOOSE.
-pub use iec61850_l2::{LINKTYPE_ETHERNET, PcapWriter};
+pub use iec61850_l2::{LINKTYPE_ETHERNET, PcapPacket, PcapReader, PcapWriter};
 
 #[cfg(feature = "net")]
 pub use iec61850_l2::{L2Link as GooseLink, MockBus, MockLink};

@@ -12,13 +12,15 @@ keywords.workspace = true
 categories.workspace = true
 
 [package.metadata.docs.rs]
-features = ["net"]
+features = ["net", "ecdsa"]
 
 [features]
 default = []
 # Publicador/suscriptor + socket de capa 2 (vía iec61850-l2). El codec
 # (frame/pdu) compila y se testea SIN esta feature.
 net = ["iec61850-l2/net", "dep:tokio"]
+# Firma asimétrica ECDSA P-256 de tramas (IEC 62351-6:2020), vía iec61850-l2.
+ecdsa = ["iec61850-l2/ecdsa"]
 
 [dependencies]
 iec61850-ber = { workspace = true }
@@ -37,3 +39,6 @@ required-features = ["net"]
 [[example]]
 name = "goose_monitor"
 required-features = ["net"]
+
+[lints]
+workspace = true

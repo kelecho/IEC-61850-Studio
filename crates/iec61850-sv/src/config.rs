@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use iec61850_ber::UtcTime;
-use iec61850_l2::{MacAddr, VlanTag};
+use iec61850_l2::{MacAddr, Signer, VlanTag};
 
 /// Parámetros de un flujo SV a publicar.
 #[derive(Debug, Clone)]
@@ -27,6 +27,9 @@ pub struct SvConfig {
     pub smp_cnt_wrap: u16,
     /// Bit "Simulated" de Ed.2 (Reserved1): publica muestras simuladas/de prueba.
     pub simulation: bool,
+    /// Firmante de las tramas (IEC 62351-6): HMAC-SHA256 o ECDSA P-256. `None` =
+    /// sin firma.
+    pub security: Option<Signer>,
 }
 
 impl SvConfig {
@@ -46,7 +49,15 @@ impl SvConfig {
             include_refr_tm: true,
             smp_cnt_wrap: 4000,
             simulation: false,
+            security: None,
         }
+    }
+
+    /// Activa la firma de tramas (IEC 62351-6) con el firmante dado (una
+    /// [`HmacKey`](crate::HmacKey) o un `EcdsaSigner`).
+    pub fn with_security(mut self, signer: impl Into<Signer>) -> Self {
+        self.security = Some(signer.into());
+        self
     }
 }
 

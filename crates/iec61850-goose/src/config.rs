@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use iec61850_ber::UtcTime;
 
-use crate::frame::{MacAddr, VlanTag};
+use crate::frame::{MacAddr, Signer, VlanTag};
 
 /// Parámetros de un control block GOOSE para publicar.
 #[derive(Debug, Clone)]
@@ -25,6 +25,9 @@ pub struct GooseConfig {
     pub t_min: Duration,
     /// Intervalo estable máximo de retransmisión (~1000 ms).
     pub t_max: Duration,
+    /// Firmante de las tramas (IEC 62351-6): HMAC-SHA256 o ECDSA P-256. `None` =
+    /// sin firma.
+    pub security: Option<Signer>,
 }
 
 impl GooseConfig {
@@ -44,7 +47,15 @@ impl GooseConfig {
             simulation: false,
             t_min: Duration::from_millis(4),
             t_max: Duration::from_millis(1000),
+            security: None,
         }
+    }
+
+    /// Activa la firma de tramas (IEC 62351-6) con el firmante dado (una
+    /// [`HmacKey`](crate::HmacKey) o un `EcdsaSigner`).
+    pub fn with_security(mut self, signer: impl Into<Signer>) -> Self {
+        self.security = Some(signer.into());
+        self
     }
 }
 

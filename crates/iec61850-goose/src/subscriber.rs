@@ -13,7 +13,7 @@ use tokio::time::{Instant, sleep};
 
 use iec61850_l2::L2Link as GooseLink;
 
-use crate::frame::{GooseFrame, MacAddr};
+use crate::frame::{AuthStatus, GooseFrame, MacAddr, Verifier};
 
 /// Filtro opcional de tramas entrantes.
 #[derive(Debug, Clone, Default)]
@@ -45,6 +45,10 @@ pub enum GooseEventKind {
     LossSuspected { expected_sq: u32, got_sq: u32 },
     /// Venció `timeAllowedToLive` sin recibir nueva trama.
     Expired,
+    /// Con seguridad exigida (IEC 62351-6), la trama llegó con firma inválida o
+    /// sin firmar. Se entrega para diagnóstico pero **no** actualiza el
+    /// seguimiento de estado.
+    AuthFailed { status: AuthStatus },
 }
 
 /// Evento entregado al consumidor.
@@ -86,6 +90,7 @@ pub struct GooseSubscriber<L> {
     link: L,
     filter: GooseFilter,
     sim_mode: Arc<AtomicBool>,
+    security: Option<Verifier>,
 }
 
 impl<L: GooseLink> GooseSubscriber<L> {
@@ -94,7 +99,17 @@ impl<L: GooseLink> GooseSubscriber<L> {
             link,
             filter,
             sim_mode: Arc::new(AtomicBool::new(false)),
+            security: None,
         }
+    }
+
+    /// Exige autenticación (IEC 62351-6): solo se procesan las tramas con firma
+    /// válida bajo el verificador dado (HMAC-SHA256 o ECDSA P-256); las no
+    /// firmadas o manipuladas se entregan con `kind = AuthFailed` (para
+    /// diagnóstico) sin actualizar el seguimiento.
+    pub fn security(mut self, verifier: impl Into<Verifier>) -> Self {
+        self.security = Some(verifier.into());
+        self
     }
 
     /// Activa el **modo simulación** (equivalente a `LPHD.Sim` de Ed.2): con él
@@ -116,6 +131,7 @@ impl<L: GooseLink> GooseSubscriber<L> {
             self.link,
             self.filter,
             self.sim_mode,
+            self.security,
             events_tx,
             stop_rx,
         ));
@@ -168,6 +184,7 @@ async fn run<L: GooseLink>(
     link: L,
     filter: GooseFilter,
     sim_mode: Arc<AtomicBool>,
+    security: Option<Verifier>,
     events_tx: mpsc::Sender<GooseEvent>,
     mut stop_rx: oneshot::Receiver<()>,
 ) {
@@ -184,7 +201,28 @@ async fn run<L: GooseLink>(
 
             r = link.recv() => {
                 let Ok(bytes) = r else { break };
-                let Ok(frame) = GooseFrame::decode(&bytes) else { continue };
+                // Con seguridad exigida (62351-6), verifica el HMAC; entrega las
+                // fallidas como AuthFailed y no las incorpora al seguimiento.
+                let frame = match &security {
+                    Some(key) => match GooseFrame::decode_verified(&bytes, key) {
+                        Ok((f, AuthStatus::Valid)) => f,
+                        Ok((f, status)) => {
+                            if !filter.accepts(&f) {
+                                continue;
+                            }
+                            let ev = plain_event(f, GooseEventKind::AuthFailed { status });
+                            if events_tx.send(ev).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Err(_) => continue,
+                    },
+                    None => {
+                        let Ok(f) = GooseFrame::decode(&bytes) else { continue };
+                        f
+                    }
+                };
                 if !filter.accepts(&frame) {
                     continue;
                 }
@@ -273,6 +311,31 @@ fn sim_gate(
     } else {
         // Trama real: se ignora si esta suscripción ya está bajo simulación.
         !simulated_subs.contains(gocb_ref)
+    }
+}
+
+/// Construye un `GooseEvent` a partir de una trama sin tocar el seguimiento de
+/// estado (para eventos como `AuthFailed` que no deben mover `stNum`/`sqNum`).
+fn plain_event(frame: GooseFrame, kind: GooseEventKind) -> GooseEvent {
+    let appid = frame.appid;
+    let src = frame.src;
+    let simulation = frame.simulation;
+    let p = frame.pdu;
+    GooseEvent {
+        gocb_ref: p.gocb_ref,
+        go_id: p.go_id,
+        dat_set: p.dat_set,
+        appid,
+        src,
+        st_num: p.st_num,
+        sq_num: p.sq_num,
+        conf_rev: p.conf_rev,
+        test: p.test,
+        simulation,
+        t: p.t,
+        time_allowed_to_live: p.time_allowed_to_live,
+        values: p.all_data,
+        kind,
     }
 }
 

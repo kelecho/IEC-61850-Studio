@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 
 use crate::frame::SvFrame;
 use crate::nine_two_le::NineTwoLe;
-use iec61850_l2::MacAddr;
+use iec61850_l2::{AuthStatus, MacAddr, Verifier};
 
 /// Filtro opcional de tramas SV entrantes.
 #[derive(Debug, Clone, Default)]
@@ -31,6 +31,9 @@ pub enum SvEventKind {
     SampleLoss { expected: u16, got: u16 },
     /// `smpCnt` volvió a 0 (fin de ciclo esperado).
     Wrap,
+    /// Con seguridad exigida (IEC 62351-6), la trama llegó con firma inválida o
+    /// sin firmar. Se entrega para diagnóstico sin actualizar el seguimiento.
+    AuthFailed { status: AuthStatus },
 }
 
 /// Muestra SV entregada al consumidor (una por ASDU).
@@ -58,6 +61,7 @@ pub struct SvSubscriber<L> {
     link: L,
     filter: SvFilter,
     sim_mode: Arc<AtomicBool>,
+    security: Option<Verifier>,
 }
 
 impl<L: L2Link> SvSubscriber<L> {
@@ -66,7 +70,17 @@ impl<L: L2Link> SvSubscriber<L> {
             link,
             filter,
             sim_mode: Arc::new(AtomicBool::new(false)),
+            security: None,
         }
+    }
+
+    /// Exige autenticación (IEC 62351-6): solo se procesan las tramas con firma
+    /// válida bajo el verificador dado (HMAC-SHA256 o ECDSA P-256); las no
+    /// firmadas o manipuladas se entregan con `kind = AuthFailed` (para
+    /// diagnóstico) sin actualizar el seguimiento.
+    pub fn security(mut self, verifier: impl Into<Verifier>) -> Self {
+        self.security = Some(verifier.into());
+        self
     }
 
     /// Activa el **modo simulación** (`LPHD.Sim` de Ed.2): acepta las muestras
@@ -85,6 +99,7 @@ impl<L: L2Link> SvSubscriber<L> {
             self.link,
             self.filter,
             self.sim_mode,
+            self.security,
             events_tx,
             stop_rx,
         ));
@@ -152,6 +167,7 @@ async fn run<L: L2Link>(
     link: L,
     filter: SvFilter,
     sim_mode: Arc<AtomicBool>,
+    security: Option<Verifier>,
     events_tx: mpsc::Sender<SvEvent>,
     mut stop_rx: oneshot::Receiver<()>,
 ) {
@@ -162,7 +178,19 @@ async fn run<L: L2Link>(
             _ = &mut stop_rx => break,
             r = link.recv() => {
                 let Ok(bytes) = r else { break };
-                let Ok(frame) = SvFrame::decode(&bytes) else { continue };
+                // Con seguridad exigida (62351-6), verifica el HMAC de la trama;
+                // si falla, las muestras se entregan como AuthFailed sin tracking.
+                let (frame, fail_status) = match &security {
+                    Some(key) => match SvFrame::decode_verified(&bytes, key) {
+                        Ok((f, AuthStatus::Valid)) => (f, None),
+                        Ok((f, status)) => (f, Some(status)),
+                        Err(_) => continue,
+                    },
+                    None => match SvFrame::decode(&bytes) {
+                        Ok(f) => (f, None),
+                        Err(_) => continue,
+                    },
+                };
                 if filter.appid.is_some_and(|a| a != frame.appid)
                     || filter.dst.is_some_and(|d| d != frame.dst) {
                     continue;
@@ -173,6 +201,27 @@ async fn run<L: L2Link>(
                 let sim = sim_mode.load(Ordering::Relaxed);
                 for asdu in frame.pdu.asdus {
                     if filter.sv_id.as_ref().is_some_and(|s| *s != asdu.sv_id) {
+                        continue;
+                    }
+                    if let Some(status) = fail_status {
+                        let decoded_9_2le = asdu.as_9_2le();
+                        let ev = SvEvent {
+                            sv_id: asdu.sv_id,
+                            appid,
+                            src,
+                            simulation,
+                            smp_cnt: asdu.smp_cnt,
+                            conf_rev: asdu.conf_rev,
+                            smp_synch: asdu.smp_synch,
+                            smp_rate: asdu.smp_rate,
+                            refr_tm: asdu.refr_tm,
+                            sample: asdu.sample,
+                            decoded_9_2le,
+                            kind: SvEventKind::AuthFailed { status },
+                        };
+                        if events_tx.send(ev).await.is_err() {
+                            return;
+                        }
                         continue;
                     }
                     if !sim_gate(sim, &mut simulated_subs, &asdu.sv_id, simulation) {

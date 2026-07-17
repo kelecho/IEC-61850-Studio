@@ -1,11 +1,19 @@
 //! Trama GOOSE: cabecera Ethernet (capa 2 compartida) + `goosePdu`.
 
-use iec61850_l2::{EthHeader, finish_l2_frame, parse_eth_appid, write_eth_appid};
+use iec61850_l2::{
+    EthHeader, FrameSigner, FrameVerifier, finish_l2_frame, finish_l2_frame_signed,
+    parse_eth_appid, parse_eth_appid_auth, write_eth_appid,
+};
 
 use crate::error::GooseError;
 use crate::pdu::GoosePdu;
 
-pub use iec61850_l2::{MacAddr, VlanTag};
+pub use iec61850_l2::{
+    AuthStatus, HmacKey, KeyEntry, KeyRing, MacAddr, Signer, SignerRing, Verifier, VerifierRing,
+    VlanTag,
+};
+#[cfg(feature = "ecdsa")]
+pub use iec61850_l2::{EcdsaSigner, EcdsaVerifier};
 
 pub const ETHERTYPE_GOOSE: u16 = 0x88B8;
 
@@ -39,7 +47,27 @@ impl GooseFrame {
         out
     }
 
-    /// Decodifica una trama recibida.
+    /// Codifica la trama firmándola (IEC 62351-6): anexa el tag de autenticación
+    /// tras el `goosePdu`. Genérico sobre el firmante: HMAC-SHA256 ([`HmacKey`])
+    /// o ECDSA P-256 (`EcdsaSigner`, feature `ecdsa`).
+    pub fn encode_signed<S: FrameSigner>(&self, signer: &S) -> Vec<u8> {
+        let hdr = EthHeader {
+            dst: self.dst,
+            src: self.src,
+            vlan: self.vlan,
+            ethertype: ETHERTYPE_GOOSE,
+            simulation: self.simulation,
+        };
+        let mut out = Vec::with_capacity(160);
+        let len_pos = write_eth_appid(&mut out, &hdr, self.appid);
+        let apdu = self.pdu.encode();
+        out.extend_from_slice(&apdu);
+        finish_l2_frame_signed(&mut out, len_pos, apdu.len(), signer);
+        out
+    }
+
+    /// Decodifica una trama recibida (el tag de autenticación, si lo hay, se
+    /// descuenta del APDU pero **no** se verifica; usa [`GooseFrame::decode_verified`]).
     pub fn decode(bytes: &[u8]) -> Result<GooseFrame, GooseError> {
         let (hdr, appid, apdu) = parse_eth_appid(bytes, ETHERTYPE_GOOSE)?;
         Ok(GooseFrame {
@@ -50,6 +78,32 @@ impl GooseFrame {
             simulation: hdr.simulation,
             pdu: GoosePdu::decode(apdu)?,
         })
+    }
+
+    /// Decodifica y verifica la autenticación (IEC 62351-6) con el verificador
+    /// dado (HMAC-SHA256 o ECDSA P-256). Devuelve la trama y el estado de la
+    /// firma: `Unsigned` si no traía tag, `Valid`/`Invalid` según verifique.
+    pub fn decode_verified<V: FrameVerifier>(
+        bytes: &[u8],
+        verifier: &V,
+    ) -> Result<(GooseFrame, AuthStatus), GooseError> {
+        let p = parse_eth_appid_auth(bytes, ETHERTYPE_GOOSE)?;
+        let status = if p.auth_tag.is_empty() {
+            AuthStatus::Unsigned
+        } else if verifier.verify_tag(p.signed_data, p.auth_tag) {
+            AuthStatus::Valid
+        } else {
+            AuthStatus::Invalid
+        };
+        let frame = GooseFrame {
+            dst: p.hdr.dst,
+            src: p.hdr.src,
+            vlan: p.hdr.vlan,
+            appid: p.appid,
+            simulation: p.hdr.simulation,
+            pdu: GoosePdu::decode(p.apdu)?,
+        };
+        Ok((frame, status))
     }
 }
 
@@ -134,5 +188,27 @@ mod tests {
         bytes[12] = 0x08;
         bytes[13] = 0x00; // IPv4
         assert!(GooseFrame::decode(&bytes).is_err());
+    }
+
+    #[test]
+    fn signed_round_trip_and_tamper() {
+        let key = HmacKey::new(b"clave-goose");
+        let f = frame(Some(VlanTag::new(100)));
+        let bytes = f.encode_signed(&key);
+
+        // Verificación correcta y PDU intacto.
+        let (decoded, status) = GooseFrame::decode_verified(&bytes, &key).unwrap();
+        assert_eq!(status, AuthStatus::Valid);
+        assert_eq!(decoded, f);
+        // decode() normal también recupera el PDU (ignora el tag).
+        assert_eq!(GooseFrame::decode(&bytes).unwrap(), f);
+
+        // Clave distinta → Invalid.
+        let (_, status) = GooseFrame::decode_verified(&bytes, &HmacKey::new(b"otra")).unwrap();
+        assert_eq!(status, AuthStatus::Invalid);
+
+        // Trama sin firmar verificada con clave → Unsigned.
+        let (_, status) = GooseFrame::decode_verified(&f.encode(), &key).unwrap();
+        assert_eq!(status, AuthStatus::Unsigned);
     }
 }

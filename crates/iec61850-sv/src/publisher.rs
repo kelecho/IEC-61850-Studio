@@ -97,7 +97,11 @@ async fn run<L: L2Link>(
                     simulation: cfg.simulation,
                     pdu: SvPdu { no_asdu: 1, asdus: vec![asdu] },
                 };
-                let _ = link.send(&frame.encode()).await;
+                let bytes = match &cfg.security {
+                    Some(key) => frame.encode_signed(key),
+                    None => frame.encode(),
+                };
+                let _ = link.send(&bytes).await;
                 smp_cnt = if smp_cnt + 1 >= cfg.smp_cnt_wrap { 0 } else { smp_cnt + 1 };
             }
         }

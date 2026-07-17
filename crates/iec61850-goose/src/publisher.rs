@@ -148,5 +148,9 @@ async fn send_frame<L: GooseLink>(
         simulation: config.simulation,
         pdu,
     };
-    let _ = link.send(&frame.encode()).await;
+    let bytes = match &config.security {
+        Some(key) => frame.encode_signed(key),
+        None => frame.encode(),
+    };
+    let _ = link.send(&bytes).await;
 }

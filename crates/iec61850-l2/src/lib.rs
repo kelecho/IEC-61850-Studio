@@ -6,21 +6,31 @@
 //! (0x88BA). El codec de cabecera ([`eth`]) compila sin red; el transporte está
 //! tras la feature `net`.
 
+pub mod auth;
 pub mod error;
 pub mod eth;
+pub mod keystore;
 pub mod pcap;
+#[cfg(feature = "ecdsa")]
+pub mod sign;
 
 #[cfg(feature = "net")]
 pub mod link;
 #[cfg(all(feature = "net", target_os = "linux"))]
 pub mod socket;
 
+pub use auth::{
+    AuthStatus, FrameSigner, FrameVerifier, HMAC_SHA256_TAG_LEN, HmacKey, Signer, Verifier, sha256,
+};
 pub use error::L2Error;
 pub use eth::{
-    EthHeader, MacAddr, RESERVED1_SIMULATED, TPID_8021Q, VlanTag, finish_l2_frame, parse_eth_appid,
-    write_eth_appid,
+    EthHeader, MacAddr, ParsedAppFrame, RESERVED1_SIMULATED, TPID_8021Q, VlanTag, finish_l2_frame,
+    finish_l2_frame_signed, parse_eth_appid, parse_eth_appid_auth, write_eth_appid,
 };
-pub use pcap::{LINKTYPE_ETHERNET, PcapWriter};
+pub use keystore::{KeyEntry, KeyRing, SignerRing, VerifierRing};
+pub use pcap::{LINKTYPE_ETHERNET, PcapPacket, PcapReader, PcapWriter};
+#[cfg(feature = "ecdsa")]
+pub use sign::{ECDSA_P256_TAG_LEN, EcdsaError, EcdsaSigner, EcdsaVerifier};
 
 #[cfg(feature = "net")]
 pub use link::{L2Link, MockBus, MockLink};

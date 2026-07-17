@@ -18,11 +18,16 @@ pub mod subscriber;
 
 pub use config::SvConfig;
 pub use error::SvError;
-pub use frame::{ETHERTYPE_SV, SvFrame};
+pub use frame::{
+    AuthStatus, ETHERTYPE_SV, HmacKey, KeyEntry, KeyRing, Signer, SignerRing, SvFrame, Verifier,
+    VerifierRing,
+};
+#[cfg(feature = "ecdsa")]
+pub use frame::{EcdsaSigner, EcdsaVerifier};
 pub use nine_two_le::{NineTwoLe, SvChannel};
 pub use pdu::{Asdu, SvPdu};
 
-pub use iec61850_l2::{MacAddr, VlanTag};
+pub use iec61850_l2::{LINKTYPE_ETHERNET, MacAddr, PcapPacket, PcapReader, PcapWriter, VlanTag};
 
 #[cfg(feature = "net")]
 pub use iec61850_l2::{L2Link, MockBus, MockLink};

@@ -8,7 +8,8 @@ use iec61850_goose::GooseFilter;
 use iec61850_goose::frame::{GooseFrame, MacAddr};
 use iec61850_goose::pdu::GoosePdu;
 use iec61850_goose::{
-    GooseConfig, GooseEventKind, GoosePublisher, GooseSubscriber, MmsData, MockBus,
+    AuthStatus, GooseConfig, GooseEventKind, GoosePublisher, GooseSubscriber, HmacKey, KeyRing,
+    MmsData, MockBus,
 };
 
 const DST: MacAddr = [0x01, 0x0C, 0xCD, 0x01, 0x00, 0x01];
@@ -133,6 +134,157 @@ async fn loss_and_expiry() {
     assert_eq!(ev.kind, GooseEventKind::Expired);
 
     sub.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn signed_publisher_verified_by_subscriber() {
+    // IEC 62351-6: el publicador firma con HMAC-SHA256; el suscriptor con la misma
+    // clave acepta las tramas (Valid); con una clave distinta las marca AuthFailed.
+    let bus = MockBus::new();
+    let key = HmacKey::new(b"clave-de-la-subestacion");
+    let publisher = GoosePublisher::new(bus.link(), config().with_security(key.clone()));
+
+    // Suscriptor legítimo (misma clave): procesa normalmente.
+    let mut good = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(key)
+        .start();
+    // Suscriptor con clave equivocada: ve las tramas como AuthFailed.
+    let mut bad = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(HmacKey::new(b"clave-incorrecta"))
+        .start();
+
+    let handle = publisher.start();
+    handle.publish(vec![MmsData::Bool(true)]).await.unwrap();
+
+    let ev = good.recv_event().await.unwrap();
+    assert_eq!(ev.kind, GooseEventKind::StateChange);
+    assert_eq!(ev.values, vec![MmsData::Bool(true)]);
+
+    let ev = bad.recv_event().await.unwrap();
+    assert_eq!(
+        ev.kind,
+        GooseEventKind::AuthFailed {
+            status: AuthStatus::Invalid
+        },
+        "una clave distinta debe fallar la verificación"
+    );
+
+    handle.stop().await;
+    good.stop().await;
+    bad.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn unsigned_frame_rejected_when_security_required() {
+    // Un publicador SIN firma contra un suscriptor que EXIGE firma: las tramas se
+    // entregan como AuthFailed(Unsigned), no como eventos normales.
+    let bus = MockBus::new();
+    let publisher = GoosePublisher::new(bus.link(), config()); // sin security
+    let mut sub = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(HmacKey::new(b"clave"))
+        .start();
+
+    let handle = publisher.start();
+    handle.publish(vec![MmsData::Bool(true)]).await.unwrap();
+
+    let ev = sub.recv_event().await.unwrap();
+    assert_eq!(
+        ev.kind,
+        GooseEventKind::AuthFailed {
+            status: AuthStatus::Unsigned
+        }
+    );
+    handle.stop().await;
+    sub.stop().await;
+}
+
+#[cfg(feature = "ecdsa")]
+#[tokio::test(start_paused = true)]
+async fn ecdsa_signed_publisher_verified_by_subscriber() {
+    use iec61850_goose::EcdsaSigner;
+
+    // IEC 62351-6:2020: el publicador firma con ECDSA P-256 (clave privada); el
+    // suscriptor verifica con la pública. Otra clave pública → AuthFailed.
+    let bus = MockBus::new();
+    let signer = EcdsaSigner::from_scalar(&[0x2A; 32]).unwrap();
+    let verifier = signer.verifier();
+    let publisher = GoosePublisher::new(bus.link(), config().with_security(signer));
+
+    let mut good = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(verifier)
+        .start();
+    let other = EcdsaSigner::from_scalar(&[0x3B; 32]).unwrap().verifier();
+    let mut bad = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(other)
+        .start();
+
+    let handle = publisher.start();
+    handle.publish(vec![MmsData::Bool(true)]).await.unwrap();
+
+    let ev = good.recv_event().await.unwrap();
+    assert_eq!(ev.kind, GooseEventKind::StateChange);
+    assert_eq!(ev.values, vec![MmsData::Bool(true)]);
+
+    let ev = bad.recv_event().await.unwrap();
+    assert_eq!(
+        ev.kind,
+        GooseEventKind::AuthFailed {
+            status: AuthStatus::Invalid
+        }
+    );
+
+    handle.stop().await;
+    good.stop().await;
+    bad.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn key_rotation_with_overlap() {
+    // IEC 62351-9: el publicador firma con la clave de grupo activa (mayor key_id).
+    // Durante una rotación, el suscriptor tiene ambas claves en su anillo, así que
+    // acepta las tramas sin cortes; un suscriptor que solo tiene la clave vieja
+    // deja de validar (AuthFailed) al rotar.
+    let bus = MockBus::new();
+    let k1 = HmacKey::new(b"grupo-clave-1");
+    let k2 = HmacKey::new(b"grupo-clave-2");
+
+    // Publicador: anillo con la clave 2 como activa (mayor key_id).
+    let mut sign_ring = KeyRing::new();
+    sign_ring.insert_permanent(1, k1.clone().into());
+    sign_ring.insert_permanent(2, k2.clone().into());
+    let publisher = GoosePublisher::new(bus.link(), config().with_security(sign_ring));
+
+    // Suscriptor al día: anillo con ambas claves (cubre el solapamiento).
+    let up_to_date = KeyRing::new()
+        .with_permanent(1, k1.clone().into())
+        .with_permanent(2, k2.into());
+    let mut good = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(up_to_date)
+        .start();
+    // Suscriptor rezagado: solo tiene la clave vieja.
+    let stale = KeyRing::new().with_permanent(1, k1.into());
+    let mut lagging = GooseSubscriber::new(bus.link(), GooseFilter::default())
+        .security(stale)
+        .start();
+
+    let handle = publisher.start();
+    handle.publish(vec![MmsData::Bool(true)]).await.unwrap();
+
+    // El suscriptor al día valida (tiene la clave 2, con la que se firmó).
+    let ev = good.recv_event().await.unwrap();
+    assert_eq!(ev.kind, GooseEventKind::StateChange);
+    // El rezagado no valida la trama firmada con la clave nueva.
+    let ev = lagging.recv_event().await.unwrap();
+    assert_eq!(
+        ev.kind,
+        GooseEventKind::AuthFailed {
+            status: AuthStatus::Invalid
+        }
+    );
+
+    handle.stop().await;
+    good.stop().await;
+    lagging.stop().await;
 }
 
 fn frame(st: u32, sq: u32, ttl_ms: u32) -> Vec<u8> {

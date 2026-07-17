@@ -165,6 +165,7 @@ fn bind_interface(fd: i32, ifindex: u32, ethertype: u16) -> Result<(), L2Error> 
     sll.sll_family = libc::AF_PACKET as u16;
     sll.sll_protocol = ethertype.to_be();
     sll.sll_ifindex = ifindex as i32;
+    // SAFETY: sll vive en el stack durante la llamada y el tamaño pasado es el real.
     let rc = unsafe {
         libc::bind(
             fd,
@@ -185,6 +186,7 @@ fn add_multicast_membership(fd: i32, ifindex: u32, group: MacAddr) -> Result<(),
     mreq.mr_type = libc::PACKET_MR_MULTICAST as u16;
     mreq.mr_alen = 6;
     mreq.mr_address[..6].copy_from_slice(&group);
+    // SAFETY: mreq vive en el stack durante la llamada y el tamaño pasado es el real.
     let rc = unsafe {
         libc::setsockopt(
             fd,
@@ -206,6 +208,7 @@ fn set_promiscuous(fd: i32, ifindex: u32) -> Result<(), L2Error> {
     let mut mreq: libc::packet_mreq = unsafe { std::mem::zeroed() };
     mreq.mr_ifindex = ifindex as i32;
     mreq.mr_type = libc::PACKET_MR_PROMISC as u16;
+    // SAFETY: mreq vive en el stack durante la llamada y el tamaño pasado es el real.
     let rc = unsafe {
         libc::setsockopt(
             fd,
