@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de usuario — iec61850-tauri</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  :root {
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #8a897f;
+    --s1: #2a78d6; --s2: #008300; --s3: #e87ba4;
+    --accent: #1c5cab; --surface: #fcfcfb; --line: #e3e2dd;
+    --code-bg: #f4f3f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink); background: white; margin: 0; font-size: 10.5pt; line-height: 1.5;
+  }
+  h1 { font-size: 24pt; margin: 0 0 4px; letter-spacing: -0.5px; }
+  h2 { font-size: 15pt; margin: 28px 0 8px; color: var(--accent);
+       border-bottom: 2px solid var(--accent); padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 12pt; margin: 18px 0 6px; page-break-after: avoid; }
+  p { margin: 6px 0; }
+  code, pre { font-family: "JetBrains Mono", "Cascadia Code", monospace; font-size: 9pt; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+        padding: 10px 12px; overflow-x: auto; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th { text-align: left; background: var(--code-bg); border-bottom: 2px solid var(--line); padding: 5px 8px; }
+  td { border-bottom: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
+  td.mono, th.mono { font-family: "JetBrains Mono", monospace; font-size: 8.5pt; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  .cover .sub { font-size: 13pt; color: var(--ink-2); margin-top: 6px; }
+  .cover .meta { margin-top: 40px; color: var(--muted); font-size: 10pt; }
+  .cover .band { height: 6px; width: 220px; margin: 24px 0;
+                 background: linear-gradient(90deg, var(--s1), var(--s2), var(--s3)); border-radius: 3px; }
+  .fig { margin: 14px 0; page-break-inside: avoid; }
+  .fig figcaption { font-size: 8.5pt; color: var(--muted); margin-top: 4px; font-style: italic; }
+  .note { border-left: 3px solid var(--s1); background: #f2f7fd; padding: 8px 12px; margin: 10px 0;
+          border-radius: 0 6px 6px 0; page-break-inside: avoid; }
+  .warn { border-left: 3px solid #d03b3b; background: #fdf3f3; padding: 8px 12px; margin: 10px 0;
+          border-radius: 0 6px 6px 0; page-break-inside: avoid; }
+  .toc { columns: 2; column-gap: 30px; font-size: 10pt; }
+  .toc div { margin: 3px 0; }
+  .toc .n { color: var(--accent); font-weight: 600; margin-right: 6px; }
+  .kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+         padding: 0 5px; font-size: 8.5pt; background: white; font-family: monospace; }
+  .pagebreak { page-break-before: always; }
+  svg text { font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  svg .mono { font-family: "JetBrains Mono", monospace; }
+</style>
+</head>
+<body>
+
+<!-- ============ PORTADA ============ -->
+<div class="cover">
+  <div style="font-size:10pt;color:var(--muted);letter-spacing:2px;">IEC&nbsp;61850 · MANUAL DE USUARIO</div>
+  <div class="band"></div>
+  <h1>iec61850-tauri</h1>
+  <div class="sub">Cliente de diagnóstico y simulación IEC&nbsp;61850<br>
+  Explorador MMS · Reportes en vivo · Control · GOOSE / Sampled Values · Ficheros</div>
+  <div class="meta">
+    Versión 0.1.0 · julio 2026<br>
+    Librería <code>iec61850-rs</code> (Rust) — cliente y servidor MMS, SCL, GOOSE, SV, IEC&nbsp;62351<br>
+    Ejemplos de este manual: CID real <code>LT-SJA (ES-VAL).cid</code> (ABB/Hitachi, exportado con IET600)
+  </div>
+</div>
+
+<!-- ============ ÍNDICE ============ -->
+<h2>Índice</h2>
+<div class="toc">
+  <div><span class="n">1</span> Qué es la aplicación</div>
+  <div><span class="n">2</span> Arquitectura</div>
+  <div><span class="n">3</span> Inicio rápido en 5 pasos</div>
+  <div><span class="n">4</span> Conexión a un IED</div>
+  <div><span class="n">5</span> Navegación del modelo de datos</div>
+  <div><span class="n">6</span> Lectura de datos y polling</div>
+  <div><span class="n">7</span> Escritura de valores</div>
+  <div><span class="n">8</span> Reportes (RCB) en vivo</div>
+  <div><span class="n">9</span> Operaciones de control</div>
+  <div><span class="n">10</span> Monitor GOOSE y Sampled Values</div>
+  <div><span class="n">11</span> Comparar SCL ↔ IED real</div>
+  <div><span class="n">12</span> Transferencia de ficheros (COMTRADE)</div>
+  <div><span class="n">13</span> Simular un IED en la red</div>
+  <div><span class="n">14</span> Seguridad: TLS / mTLS (IEC 62351-3)</div>
+  <div><span class="n">15</span> Solución de problemas</div>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1 · Qué es la aplicación</h2>
+<p><b>iec61850-tauri</b> es una herramienta de escritorio para <b>probar, diagnosticar y simular</b>
+dispositivos IEC&nbsp;61850 (IEDs de protección y control de subestaciones). Con ella puede:</p>
+<table>
+  <tr><th>Tarea</th><th>Dónde</th></tr>
+  <tr><td>Conectar a un IED real o simulado (MMS, TCP 102), con o sin TLS</td><td>Barra de conexión</td></tr>
+  <tr><td>Explorar su modelo de datos (LD → LN → DO → DA) desde la red o desde un fichero SCL</td><td>Panel de navegación</td></tr>
+  <tr><td>Leer valores sueltos, en tabla de vigilancia o con refresco periódico</td><td>Pestañas <i>Datos</i> y <i>Watch</i></td></tr>
+  <tr><td>Habilitar RCBs y ver los reportes espontáneos según llegan</td><td>Pestaña <i>Reportes</i></td></tr>
+  <tr><td>Escribir valores y operar objetos de control (con confirmación)</td><td>Pestañas <i>Datos</i> y <i>Control</i></td></tr>
+  <tr><td>Capturar y publicar tramas GOOSE y Sampled Values en la capa 2</td><td>Pestañas <i>GOOSE</i> y <i>SV</i></td></tr>
+  <tr><td>Descargar registros de perturbación (COMTRADE) del IED</td><td>Pestaña <i>Ficheros</i></td></tr>
+  <tr><td>Arrancar un IED simulado embebido para trabajar sin hardware</td><td>Entorno de pruebas</td></tr>
+</table>
+<div class="note"><b>Datos de ejemplo.</b> Las capturas y valores de este manual provienen de un
+CID real de subestación —línea <code>LT-SJA</code>— con 7 IEDs (protecciones de línea ABB),
+46 dispositivos lógicos y 367 nodos lógicos, servido por el simulador <code>iec61850-sim</code>.</div>
+
+<!-- ============ 2 ============ -->
+<h2>2 · Arquitectura</h2>
+<p>La interfaz es web (React) pero <b>toda la comunicación de red ocurre en Rust</b>: el frontend
+solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</code>.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 720 240" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+  </defs>
+  <!-- App box -->
+  <rect x="10" y="20" width="300" height="200" rx="10" fill="#f2f7fd" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="160" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#1c5cab">Aplicación de escritorio (Tauri)</text>
+  <rect x="30" y="58" width="260" height="52" rx="6" fill="white" stroke="#e3e2dd"/>
+  <text x="160" y="80" text-anchor="middle" font-size="11" font-weight="600">UI React</text>
+  <text x="160" y="97" text-anchor="middle" font-size="9" fill="#52514e">árbol · tablas · gráficos · confirmaciones</text>
+  <rect x="30" y="130" width="260" height="72" rx="6" fill="white" stroke="#e3e2dd"/>
+  <text x="160" y="152" text-anchor="middle" font-size="11" font-weight="600">Núcleo Rust</text>
+  <text x="160" y="169" text-anchor="middle" font-size="9" fill="#52514e">iec61850-rs: cliente/servidor MMS,</text>
+  <text x="160" y="183" text-anchor="middle" font-size="9" fill="#52514e">SCL, GOOSE, SV, TLS 62351 · sim embebido</text>
+  <line x1="160" y1="110" x2="160" y2="130" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <!-- Network targets -->
+  <rect x="440" y="20" width="270" height="56" rx="8" fill="#fcfcfb" stroke="#008300" stroke-width="1.5"/>
+  <text x="575" y="43" text-anchor="middle" font-size="11" font-weight="600" fill="#006300">IED real / simulado</text>
+  <text x="575" y="60" text-anchor="middle" font-size="9" fill="#52514e" class="mono">MMS sobre TCP 102 · TLS 3782</text>
+  <rect x="440" y="96" width="270" height="56" rx="8" fill="#fcfcfb" stroke="#e87ba4" stroke-width="1.5"/>
+  <text x="575" y="119" text-anchor="middle" font-size="11" font-weight="600" fill="#a03a63">Bus de proceso / estación</text>
+  <text x="575" y="136" text-anchor="middle" font-size="9" fill="#52514e" class="mono">GOOSE · SV (Ethernet capa 2)</text>
+  <rect x="440" y="172" width="270" height="48" rx="8" fill="#fcfcfb" stroke="#eda100" stroke-width="1.5"/>
+  <text x="575" y="192" text-anchor="middle" font-size="11" font-weight="600" fill="#8a6000">Ficheros SCL</text>
+  <text x="575" y="208" text-anchor="middle" font-size="9" fill="#52514e" class="mono">.cid · .icd · .scd (offline)</text>
+  <!-- links -->
+  <line x1="310" y1="60" x2="440" y2="48" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <line x1="310" y1="140" x2="440" y2="124" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <line x1="310" y1="180" x2="440" y2="196" stroke="#52514e" stroke-width="1.5" marker-end="url(#arr)"/>
+</svg>
+<figcaption>Fig. 1 — Arquitectura: la UI nunca toca la red; el núcleo Rust habla MMS/GOOSE/SV.</figcaption>
+</figure>
+
+<!-- ============ 3 ============ -->
+<h2>3 · Inicio rápido en 5 pasos</h2>
+<ol>
+  <li><b>Arranque la app</b>: <code>pnpm tauri dev</code> (desarrollo) o el binario instalado.</li>
+  <li><b>Sin hardware</b>: pulse <i>Iniciar simulador local</i> (entorno de pruebas) — arranca un
+      IED embebido y rellena la dirección; o arranque <code>iec61850-sim</code> con su propio SCL.</li>
+  <li><b>Conectar</b>: escriba <code>127.0.0.1:10102</code> (o la IP del IED, puerto 102) y pulse
+      <i>Conectar</i>. El estado pasa a <b>asociado</b> y se descubre el modelo.</li>
+  <li><b>Explorar</b>: despliegue el árbol LD → LN → DO y seleccione un objeto: la pestaña
+      <i>Datos</i> muestra sus atributos con valores.</li>
+  <li><b>Ver datos vivos</b>: active <i>Polling</i> (p. ej. 1000 ms) o habilite un RCB en
+      <i>Reportes</i> para recibir cambios espontáneos.</li>
+</ol>
+
+<!-- ============ 4 ============ -->
+<h2 class="pagebreak">4 · Conexión a un IED</h2>
+<h3>4.1 Barra de conexión</h3>
+<figure class="fig">
+<svg viewBox="0 0 720 64" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="720" height="64" rx="8" fill="#f4f3f0" stroke="#e3e2dd"/>
+  <rect x="12" y="16" width="240" height="32" rx="6" fill="white" stroke="#c9c8c2"/>
+  <text x="24" y="37" font-size="12" class="mono" fill="#52514e">192.168.100.223:10102</text>
+  <rect x="262" y="16" width="92" height="32" rx="6" fill="#2a78d6"/>
+  <text x="308" y="37" text-anchor="middle" font-size="12" fill="white" font-weight="600">Conectar</text>
+  <rect x="364" y="16" width="40" height="32" rx="6" fill="white" stroke="#c9c8c2"/>
+  <text x="384" y="37" text-anchor="middle" font-size="13">⌕</text>
+  <rect x="414" y="16" width="40" height="32" rx="6" fill="white" stroke="#c9c8c2"/>
+  <text x="434" y="37" text-anchor="middle" font-size="13">🔒</text>
+  <rect x="470" y="20" width="110" height="24" rx="12" fill="#e6f4ea"/>
+  <text x="525" y="36" text-anchor="middle" font-size="10" fill="#006300" font-weight="600">asociado · v1</text>
+  <text x="596" y="36" font-size="10" fill="#52514e">3 conexiones</text>
+</svg>
+<figcaption>Fig. 2 — Barra de conexión: dirección, conectar, descubrir, TLS y estado de la asociación.</figcaption>
+</figure>
+<ul>
+  <li><b>Dirección</b> — <code>ip:puerto</code>. El puerto estándar MMS es <b>102</b>; los
+  simuladores sin privilegios suelen usar 10102.</li>
+  <li><b>Descubrir</b> (⌕) — relanza el descubrimiento del modelo por la asociación activa
+  (GetServerDirectory + directorio de cada LD).</li>
+  <li><b>Multi-conexión</b> — puede mantener varias asociaciones a la vez y cerrarlas una a una.</li>
+</ul>
+
+<h3>4.2 Escaneo de red</h3>
+<p>El diálogo de escaneo busca IEDs de dos maneras:</p>
+<table>
+  <tr><th>Modo</th><th>Qué hace</th><th>Ejemplo de resultado</th></tr>
+  <tr><td><b>MMS</b></td><td>Barre un rango IP (base p. ej. <code>192.168.100</code>, puerto 102)
+      intentando asociar e identificar cada host.</td>
+      <td class="mono">192.168.100.223 — iec61850-rs / iec61850-sim / 1.0</td></tr>
+  <tr><td><b>L2 (pasivo)</b></td><td>Escucha la interfaz N segundos y lista los publicadores
+      GOOSE/SV vistos (sin tocar la red).</td>
+      <td class="mono">01:0c:cd:01:00:05 · gcb_ESTADO_IED · APPID 0x3005</td></tr>
+</table>
+
+<h3>4.3 Entorno de pruebas (sin hardware)</h3>
+<p>El botón <i>Iniciar simulador local</i> arranca un <b>IED embebido en la propia app</b>
+(servidor MMS in-process con un modelo SCL de ejemplo) y deja la dirección lista para conectar.
+Existe también la variante <i>Iniciar sim TLS</i> con certificados de demostración.</p>
+
+<!-- ============ 5 ============ -->
+<h2>5 · Navegación del modelo de datos</h2>
+<p>El panel izquierdo tiene tres categorías: <b>Modelo</b> (árbol jerárquico), <b>Datasets</b> y
+<b>Reports</b> (RCBs descubiertos). El árbol puede alimentarse de la <b>red</b> (lo que anuncia el
+IED) o de un <b>fichero SCL</b> (con tipos, CDC y descripciones de ingeniería).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 720 250" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="720" height="250" rx="8" fill="#fcfcfb" stroke="#e3e2dd"/>
+  <rect x="10" y="10" width="700" height="26" rx="4" fill="#f4f3f0"/>
+  <text x="22" y="27" font-size="11" fill="#8a897f">⌕ Buscar…  (p. ej. «Watt», «rcb_», «XCBR»)</text>
+  <!-- LD row -->
+  <rect x="10" y="42" width="700" height="26" fill="#eef0f4"/>
+  <text x="20" y="59" font-size="11" font-weight="700" class="mono">▸ AA1F1Q01FN1MON</text>
+  <text x="200" y="59" font-size="10" fill="#8a897f" font-style="italic">— dispositivo lógico (medida)</text>
+  <rect x="10" y="70" width="700" height="26" fill="#eef0f4"/>
+  <text x="20" y="87" font-size="11" font-weight="700" class="mono">▾ TEMPLATEMON</text>
+  <!-- LN row -->
+  <rect x="28" y="98" width="682" height="26" fill="white"/>
+  <line x1="28" y1="98" x2="28" y2="124" stroke="#1baf7a" stroke-width="2"/>
+  <text x="40" y="115" font-size="11" font-weight="600" class="mono">▾ CVMMXN1</text>
+  <text x="140" y="115" font-size="10" fill="#8a897f" font-style="italic">— medidas monofásicas (P, Q, V, I, f)</text>
+  <!-- DO rows -->
+  <rect x="46" y="126" width="664" height="26" fill="white"/>
+  <text x="60" y="143" font-size="11" class="mono">Watt</text>
+  <rect x="105" y="130" width="34" height="17" rx="8" fill="none" stroke="#1baf7a"/>
+  <text x="122" y="142" text-anchor="middle" font-size="8.5" fill="#0d7a52">MV</text>
+  <text x="150" y="143" font-size="10" fill="#0d7a52" class="mono" font-weight="600">= 3.0</text>
+  <text x="200" y="143" font-size="10" fill="#8a897f" font-style="italic">— potencia activa</text>
+  <rect x="46" y="154" width="664" height="26" fill="#e8f0fb"/>
+  <text x="60" y="171" font-size="11" class="mono">Hz</text>
+  <rect x="105" y="158" width="34" height="17" rx="8" fill="none" stroke="#1baf7a"/>
+  <text x="122" y="170" text-anchor="middle" font-size="8.5" fill="#0d7a52">MV</text>
+  <text x="150" y="171" font-size="10" fill="#0d7a52" class="mono" font-weight="600">= 50.02</text>
+  <text x="210" y="171" font-size="10" fill="#8a897f" font-style="italic">— frecuencia (seleccionado)</text>
+  <rect x="46" y="182" width="664" height="26" fill="white"/>
+  <text x="60" y="199" font-size="11" class="mono">PhV</text>
+  <rect x="105" y="186" width="40" height="17" rx="8" fill="none" stroke="#1baf7a"/>
+  <text x="125" y="198" text-anchor="middle" font-size="8.5" fill="#0d7a52">WYE</text>
+  <text x="156" y="199" font-size="10" fill="#8a897f" font-style="italic">— tensiones de fase</text>
+  <rect x="46" y="210" width="664" height="26" fill="white"/>
+  <text x="60" y="227" font-size="11" class="mono">▸ A</text>
+  <rect x="105" y="214" width="40" height="17" rx="8" fill="none" stroke="#1baf7a"/>
+  <text x="125" y="226" text-anchor="middle" font-size="8.5" fill="#0d7a52">WYE</text>
+  <text x="156" y="227" font-size="10" fill="#8a897f" font-style="italic">— corrientes de fase</text>
+</svg>
+<figcaption>Fig. 3 — Árbol de navegación con el CID de ejemplo: LD <code>TEMPLATEMON</code>,
+LN <code>CVMMXN1</code> y sus DOs con badge de CDC y valor en vivo.</figcaption>
+</figure>
+
+<ul>
+  <li><b>Virtualizado</b>: modelos de decenas de miles de nodos se despliegan al instante.</li>
+  <li><b>Búsqueda</b>: filtra por etiqueta o referencia conservando los ancestros
+  (p. ej. <code>Watt</code> muestra <code>TEMPLATEMON/CVMMXN1.Watt</code> con su ruta).</li>
+  <li>En modelos grandes el árbol arranca plegado a nivel LD; en pequeños, desplegado.</li>
+  <li>Al seleccionar un DO, el panel derecho lista sus atributos (stVal, q, t, mag.f…) con su FC.</li>
+</ul>
+
+<!-- ============ 6 ============ -->
+<h2 class="pagebreak">6 · Lectura de datos y polling</h2>
+<p>Seleccione un DO en el árbol: la pestaña <b>Datos</b> muestra la estructura con cada atributo,
+su FC (badge), su tipo y su valor. Pulse un atributo para fijarlo como referencia activa.</p>
+<table>
+  <tr><th class="mono">Atributo</th><th>FC</th><th class="mono">Valor</th><th>Significado</th></tr>
+  <tr><td class="mono">TEMPLATEMON/CVMMXN1.Watt.mag.f</td><td>MX</td><td class="mono">3.0</td><td>magnitud (float)</td></tr>
+  <tr><td class="mono">TEMPLATEMON/CVMMXN1.Watt.q</td><td>MX</td><td class="mono">good</td><td>calidad</td></tr>
+  <tr><td class="mono">TEMPLATEMON/CVMMXN1.Watt.t</td><td>MX</td><td class="mono">2026-07-18 13:05:04.500</td><td>marca de tiempo</td></tr>
+  <tr><td class="mono">TEMPLATELD0/LLN0.Beh.stVal</td><td>ST</td><td class="mono">1 (on)</td><td>comportamiento del LD</td></tr>
+</table>
+<h3>Watch (tabla de vigilancia)</h3>
+<p>Añada referencias a la pestaña <b>Watch</b> para verlas juntas. Con <b>Polling</b> activo
+(mínimo 200 ms) la app relee periódicamente las referencias vigiladas y las del DO seleccionado;
+los valores se actualizan en el árbol, en <i>Datos</i> y en <i>Watch</i>.</p>
+<div class="note">El polling es <b>lectura MMS periódica</b> (sondeo). Para cambios espontáneos
+sin sondear, use los reportes (§8): el IED empuja los datos cuando cambian.</div>
+
+<!-- ============ 7 ============ -->
+<h2>7 · Escritura de valores</h2>
+<p>Con un atributo escribible seleccionado (FC <code>SP</code>, <code>SE</code>, <code>CF</code>…),
+elija el tipo (<code>Float</code>, <code>Int</code>, <code>Bool</code>, <code>String</code>…),
+escriba el valor y pulse <b>Escribir</b>. La app pide <b>confirmación</b> antes de enviar:
+muestra referencia, valor actual y valor nuevo.</p>
+<div class="warn"><b>Precaución.</b> Escribir sobre un IED real cambia su configuración o su
+proceso. Las escrituras rechazadas por el IED se muestran con su <code>DataAccessError</code>
+(p. ej. <code>object-access-denied</code> si el rol/RBAC no lo permite).</div>
+
+<!-- ============ 8 ============ -->
+<h2>8 · Reportes (RCB) en vivo</h2>
+<p>La categoría <b>Reports</b> del panel izquierdo lista los RCBs descubiertos. Al elegir uno se
+carga su configuración (RptID, DatSet, ConfRev, TrgOps, OptFlds, IntgPd, BufTm) en un formulario
+editable. <b>Habilitar</b> escribe la configuración y pone <code>RptEna=true</code>; desde ese
+momento los reportes entrantes aparecen en la tabla según llegan.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 720 210" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+  </defs>
+  <line x1="140" y1="30" x2="140" y2="195" stroke="#c9c8c2" stroke-width="1.5"/>
+  <line x1="580" y1="30" x2="580" y2="195" stroke="#c9c8c2" stroke-width="1.5"/>
+  <text x="140" y="20" text-anchor="middle" font-size="11" font-weight="700">App (cliente)</text>
+  <text x="580" y="20" text-anchor="middle" font-size="11" font-weight="700">IED</text>
+  <line x1="140" y1="50" x2="580" y2="50" stroke="#2a78d6" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="360" y="44" text-anchor="middle" font-size="9.5" class="mono">Write DatSet / TrgOps / OptFlds → RptEna=true</text>
+  <line x1="140" y1="80" x2="580" y2="80" stroke="#2a78d6" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="360" y="74" text-anchor="middle" font-size="9.5" class="mono">GI=true (interrogación general, opcional)</text>
+  <line x1="580" y1="110" x2="140" y2="110" stroke="#008300" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="360" y="104" text-anchor="middle" font-size="9.5" class="mono">InformationReport — todos los miembros (GI)</text>
+  <line x1="580" y1="145" x2="140" y2="145" stroke="#008300" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="360" y="139" text-anchor="middle" font-size="9.5" class="mono">InformationReport — dchg: Watt = 2.5</text>
+  <line x1="580" y1="175" x2="140" y2="175" stroke="#008300" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="360" y="169" text-anchor="middle" font-size="9.5" class="mono">InformationReport — dchg: Watt = 3.0</text>
+</svg>
+<figcaption>Fig. 4 — Secuencia de reporting: habilitar, interrogación general y reportes espontáneos por cambio de dato.</figcaption>
+</figure>
+
+<h3>Ejemplo con el CID real</h3>
+<p>RCB <code>TEMPLATELD0/LLN0.rcb_E[RP]</code> (no bufferado, dataset <code>MeasFltA</code>,
+12 medidas dead-band de la línea):</p>
+<table>
+  <tr><th>#</th><th class="mono">RptID</th><th>Seq</th><th>Miembro</th><th class="mono">Valor</th><th>Motivo</th></tr>
+  <tr><td>3</td><td class="mono">AA1F1Q01KF1LD0/LLN0.rcb_E</td><td>2</td>
+      <td class="mono">TEMPLATEMON/CVMMXN1.Watt[MX]</td><td class="mono">{mag.f: 3.0, q: good, t: …}</td><td>dchg</td></tr>
+  <tr><td>2</td><td class="mono">AA1F1Q01KF1LD0/LLN0.rcb_E</td><td>1</td>
+      <td class="mono">TEMPLATEMON/CVMMXN1.Watt[MX]</td><td class="mono">{mag.f: 2.5, q: good, t: …}</td><td>dchg</td></tr>
+  <tr><td>1</td><td class="mono">AA1F1Q01KF1LD0/LLN0.rcb_E</td><td>0</td>
+      <td class="mono">12 miembros (GI)</td><td class="mono">A, SeqA, PhV, PPV, …</td><td>gi</td></tr>
+</table>
+<ul>
+  <li><b>Mapear miembros</b>: con el SCL cargado, el botón <i>Mapear</i> traduce los índices de
+  inclusión a nombres de miembro del dataset.</li>
+  <li><b>BRCB</b> (bufferados, FC <code>BR</code>): traen <code>EntryID</code>; al rehabilitar,
+  el IED reenvía lo perdido desde el último EntryID visto (resincronización).</li>
+  <li>Los RCB admiten <b>reserva</b>: si otro cliente lo tiene tomado, el IED responde
+  <code>temporarily-unavailable</code>.</li>
+</ul>
+
+<!-- ============ 9 ============ -->
+<h2 class="pagebreak">9 · Operaciones de control</h2>
+<p>La pestaña <b>Control</b> opera objetos controlables (CDC <code>SPC</code>, <code>DPC</code>…)
+según su <code>ctlModel</code>:</p>
+<table>
+  <tr><th>ctlModel</th><th>Modelo</th><th>Flujo en la app</th></tr>
+  <tr><td>0</td><td>status-only</td><td>no operable (el IED rechaza con LastApplError)</td></tr>
+  <tr><td>1</td><td>direct-normal</td><td><i>Operar</i> → Write Oper</td></tr>
+  <tr><td>2</td><td>sbo-normal</td><td><i>Seleccionar</i> (SBO) → <i>Operar</i> antes del sboTimeout</td></tr>
+  <tr><td>3</td><td>direct-enhanced</td><td><i>Operar</i> → CommandTermination(+/−)</td></tr>
+  <tr><td>4</td><td>sbo-enhanced</td><td><i>SelectWithValue</i> → <i>Operar</i> → CommandTermination</td></tr>
+</table>
+<p>Referencia de ejemplo: <code>IED1LD0/GGIO1.SPCSO1[CO]</code> con valor <code>Bool true</code>.
+Cada operación pide <b>confirmación explícita</b> y el resultado (o el <code>AddCause</code> del
+rechazo: 18 <i>select-failed</i>, 10 <i>blocked-by-interlocking</i>…) se muestra en una notificación.</p>
+
+<!-- ============ 10 ============ -->
+<h2>10 · Monitor GOOSE y Sampled Values</h2>
+<p>Estas pestañas trabajan en la <b>capa 2</b> (Ethernet): elija la interfaz de red y pulse
+<i>Iniciar captura</i>. Requiere permisos de captura (<code>setcap</code> o root; en Windows, Npcap).</p>
+<h3>GOOSE</h3>
+<table>
+  <tr><th class="mono">GoCbRef</th><th class="mono">MAC dst</th><th>APPID</th><th>stNum</th><th>sqNum</th><th>TTL</th><th>Datos</th></tr>
+  <tr><td class="mono">TEMPLATELD0/LLN0$GO$gcb_LOGICA_RECIERRE</td><td class="mono">01:0c:cd:01:00:01</td>
+      <td class="mono">0x3001</td><td>4</td><td>127</td><td>2000&nbsp;ms</td><td class="mono">false, false, true | good</td></tr>
+  <tr><td class="mono">TEMPLATELD0/LLN0$GO$gcb_ESTADO_IED</td><td class="mono">01:0c:cd:01:00:02</td>
+      <td class="mono">0x3002</td><td>12</td><td>3</td><td>2000&nbsp;ms</td><td class="mono">true | good</td></tr>
+</table>
+<p>Un salto de <b>stNum</b> indica un cambio de estado (evento); <b>sqNum</b> cuenta las
+retransmisiones. La app también puede <b>publicar</b> GOOSE de prueba, incluida la trama con
+<b>bit de simulación</b> (Ed.2) para probar esquemas con <code>LPHD.Sim</code> sin disparar en real.</p>
+
+<h3>Sampled Values</h3>
+<p>El visor SV muestra las muestras de los 8 canales (4 corrientes + 4 tensiones en 9-2LE)
+según llegan, con su gráfico de forma de onda:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 720 220" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="720" height="220" fill="#fcfcfb"/>
+  <!-- grid -->
+  <g stroke="#e3e2dd" stroke-width="1">
+    <line x1="60" y1="30"  x2="700" y2="30"/>
+    <line x1="60" y1="75"  x2="700" y2="75"/>
+    <line x1="60" y1="120" x2="700" y2="120"/>
+    <line x1="60" y1="165" x2="700" y2="165"/>
+  </g>
+  <line x1="60" y1="120" x2="700" y2="120" stroke="#c9c8c2" stroke-width="1"/>
+  <!-- y labels -->
+  <g font-size="9" fill="#52514e" text-anchor="end">
+    <text x="54" y="33">+100 A</text>
+    <text x="54" y="123">0</text>
+    <text x="54" y="213">−100 A</text>
+  </g>
+  <!-- waveforms: 3 phases, 2.5 cycles, 120° apart, drawn as polylines -->
+  <polyline fill="none" stroke="#2a78d6" stroke-width="2" points="60,120 76,86 92,58 108,41 124,36 140,44 156,64 172,92 188,124 204,155 220,181 236,197 252,203 268,196 284,177 300,149 316,117 332,85 348,57 364,40 380,36 396,45 412,66 428,94 444,126 460,157 476,182 492,198 508,203 524,195 540,175 556,147 572,115 588,83 604,56 620,39 636,36 652,46 668,68 684,96 700,128"/>
+  <polyline fill="none" stroke="#008300" stroke-width="2" points="60,193 76,203 92,200 108,185 124,159 140,128 156,95 172,66 188,45 204,36 220,40 236,57 252,83 268,114 284,146 300,174 316,194 332,203 348,199 364,183 380,157 396,125 412,93 428,64 444,44 460,36 476,41 492,59 508,86 524,117 540,148 556,176 572,195 588,203 604,198 620,181 636,154 652,122 668,90 684,62 700,43"/>
+  <polyline fill="none" stroke="#e87ba4" stroke-width="2" points="60,47 76,37 92,38 108,52 124,76 140,107 156,139 172,168 188,190 204,202 220,201 236,188 252,164 268,134 284,102 300,72 316,50 332,37 348,38 364,51 380,74 396,104 412,136 428,166 444,188 460,201 476,202 492,189 508,166 524,136 540,104 556,73 572,50 588,37 604,38 620,50 636,73 652,103 668,135 684,165 700,187"/>
+  <!-- direct labels -->
+  <text x="126" y="28" font-size="10" font-weight="600" fill="#1c5cab">Ia</text>
+  <text x="206" y="28" font-size="10" font-weight="600" fill="#006300">Ib</text>
+  <text x="78" y="28" font-size="10" font-weight="600" fill="#a03a63">Ic</text>
+  <!-- x axis -->
+  <g font-size="9" fill="#52514e">
+    <text x="60" y="218">0</text>
+    <text x="316" y="218">20 ms</text>
+    <text x="572" y="218">40 ms</text>
+  </g>
+  <!-- legend -->
+  <g font-size="9.5" fill="#0b0b0b">
+    <rect x="560" y="10" width="10" height="3" fill="#2a78d6"/><text x="574" y="15">Ia</text>
+    <rect x="600" y="10" width="10" height="3" fill="#008300"/><text x="614" y="15">Ib</text>
+    <rect x="640" y="10" width="10" height="3" fill="#e87ba4"/><text x="654" y="15">Ic</text>
+  </g>
+</svg>
+<figcaption>Fig. 5 — Visor SV: corrientes trifásicas 9-2LE (4000 muestras/s, 50 Hz) desfasadas 120°.</figcaption>
+</figure>
+
+<div class="note">Las tramas firmadas con IEC&nbsp;62351-6 (HMAC o ECDSA) se verifican si se
+configura la clave; las tramas manipuladas aparecen como evento <code>AuthFailed</code>.</div>
+
+<!-- ============ 11 ============ -->
+<h2>11 · Comparar SCL ↔ IED real</h2>
+<p>La pestaña <b>Comparar</b> cruza el modelo del fichero SCL con el modelo descubierto en la
+red y lista las discrepancias: objetos del SCL que el IED no anuncia y objetos del IED ausentes
+en el SCL. Útil para <b>verificar que el IED en servicio corresponde a la ingeniería</b>
+(versiones de configuración, datasets modificados en campo, etc.).</p>
+
+<!-- ============ 12 ============ -->
+<h2>12 · Transferencia de ficheros (COMTRADE)</h2>
+<p>La pestaña <b>Ficheros</b> lista el directorio del IED (recursivo) con nombre, tamaño y fecha,
+y descarga cualquier fichero — en particular los <b>registros de perturbación COMTRADE</b>
+(pares <code>.cfg</code>/<code>.dat</code> y <code>.hdr</code> opcional) que generan las
+protecciones tras una falta.</p>
+<table>
+  <tr><th class="mono">Fichero</th><th>Tamaño</th><th>Fecha</th></tr>
+  <tr><td class="mono">COMTRADE/FALTA_20260715_213402.cfg</td><td class="mono">2.1 KiB</td><td class="mono">2026-07-15 21:34</td></tr>
+  <tr><td class="mono">COMTRADE/FALTA_20260715_213402.dat</td><td class="mono">184 KiB</td><td class="mono">2026-07-15 21:34</td></tr>
+  <tr><td class="mono">config/ied.cid</td><td class="mono">1.3 MiB</td><td class="mono">2026-07-17 21:49</td></tr>
+</table>
+
+<!-- ============ 13 ============ -->
+<h2 class="pagebreak">13 · Simular un IED en la red</h2>
+<p>Además del simulador embebido, la herramienta CLI <code>iec61850-sim</code> convierte
+<b>cualquier fichero SCL en un IED vivo</b> accesible desde toda la red — ideal para bancos de
+pruebas, FAT/SAT sin hardware y formación:</p>
+<pre><code># IED con el CID real, accesible desde la LAN:
+iec61850-sim --scl "LT-SJA (ES-VAL).cid" --bind 0.0.0.0:102 \
+             --vary "TEMPLATEMON/CVMMXN1.Watt.mag.f[MX]" --files ./registros
+
+# Banco de subestación: un proceso por IED, cada uno en su IP (alias):
+sudo ip addr add 10.11.1.21/24 dev eth0
+iec61850-sim --scl ied_linea.cid  --bind 10.11.1.21:102 &
+iec61850-sim --scl ied_trafo.cid  --bind 10.11.1.22:102 &</code></pre>
+<ul>
+  <li><code>--vary</code> hace oscilar un measurand (por defecto, el primero MX flotante)
+  cada <code>--vary-period-ms</code> — datos vivos para reportes y polling.</li>
+  <li><code>--files</code> expone un directorio por file transfer (sirva ahí sus COMTRADE).</li>
+  <li>El puerto 102 requiere <code>sudo setcap cap_net_bind_service=+ep iec61850-sim</code>
+  (una vez) o correr como root; sin privilegios use 10102.</li>
+  <li>Recuerde abrir el firewall: <code>sudo ufw allow 102/tcp</code>.</li>
+</ul>
+<p>Cualquier cliente 61850 de la red (esta app, IEDScout, un SCADA/gateway, libiec61850) verá
+un IED conforme: asociación, browse, lecturas, escrituras, datasets, reportes URCB/BRCB,
+settings groups, control y ficheros.</p>
+
+<!-- ============ 14 ============ -->
+<h2>14 · Seguridad: TLS / mTLS (IEC 62351-3)</h2>
+<p>El diálogo TLS (candado) configura la asociación segura:</p>
+<table>
+  <tr><th>Campo</th><th>Descripción</th></tr>
+  <tr><td>Server name (SNI)</td><td>nombre esperado del certificado del IED</td></tr>
+  <tr><td>CA</td><td>certificado de la autoridad que firma al IED</td></tr>
+  <tr><td>Cert / Key cliente</td><td>identidad de esta app (mTLS); el IED puede mapear el CN a un rol RBAC</td></tr>
+</table>
+<p>Con <i>Usar TLS</i> activo, <i>Conectar TLS</i> establece MMS sobre TLS (puerto típico 3782).
+El botón <i>Iniciar sim TLS (demo)</i> levanta un IED embebido con certificados de prueba para
+ensayar el flujo completo, incluida la revocación (CRL/OCSP) del lado servidor.</p>
+
+<!-- ============ 15 ============ -->
+<h2>15 · Solución de problemas</h2>
+<table>
+  <tr><th>Síntoma</th><th>Causa probable</th><th>Remedio</th></tr>
+  <tr><td>«conexión rechazada»</td><td>puerto/IP mal, IED caído, firewall</td>
+      <td>verifique <code>ip:puerto</code>; <code>ufw allow 102/tcp</code> en el servidor</td></tr>
+  <tr><td>Asocia pero el árbol sale vacío</td><td>descubrimiento no lanzado</td>
+      <td>pulse ⌕ (Descubrir); pruebe la fuente «SCL» con el fichero del IED</td></tr>
+  <tr><td>«authentication-failure» al asociar</td><td>el IED exige password ACSE (62351-4) o token</td>
+      <td>configure la credencial correcta</td></tr>
+  <tr><td>Escritura → <code>object-access-denied</code></td><td>RBAC: el rol no tiene permiso</td>
+      <td>use una identidad con rol Operator/Engineer</td></tr>
+  <tr><td>RCB → <code>temporarily-unavailable</code></td><td>RCB reservado por otro cliente</td>
+      <td>use otro RCB o espere a que expire la reserva (<code>ResvTms</code>)</td></tr>
+  <tr><td>GOOSE/SV sin tramas</td><td>sin permisos de captura o interfaz equivocada</td>
+      <td><code>setcap cap_net_raw,cap_net_admin=+ep</code>; elija la interfaz del bus</td></tr>
+  <tr><td>Reportes no llegan</td><td>TrgOps sin <code>dchg</code>, dataset vacío, RptEna=false</td>
+      <td>revise el formulario del RCB y habilite de nuevo; pruebe GI</td></tr>
+</table>
+
+<div style="margin-top:40px;color:var(--muted);font-size:9pt;border-top:1px solid var(--line);padding-top:8px;">
+Manual generado para iec61850-tauri 0.1.0 · librería iec61850-rs · julio 2026.
+Los identificadores de ejemplo (TEMPLATEMON, CVMMXN1, rcb_E, MeasFltA…) pertenecen al CID
+de demostración «LT-SJA (ES-VAL)».
+</div>
+
+</body>
+</html>
