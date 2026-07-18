@@ -174,7 +174,7 @@ jobs:
       - name: Cobertura de tests
         run: |
           cargo llvm-cov --features "${FEATURES_FULL}" --lcov --output-path lcov.info
-          cargo llvm-cov report --features "${FEATURES_FULL}" --summary-only >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: lcov
