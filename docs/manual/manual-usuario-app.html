@@ -98,9 +98,10 @@ dispositivos IEC&nbsp;61850 (IEDs de protección y control de subestaciones). Co
   <tr><td>Leer valores sueltos, en tabla de vigilancia o con refresco periódico</td><td>Pestañas <i>Datos</i> y <i>Watch</i></td></tr>
   <tr><td>Habilitar RCBs y ver los reportes espontáneos según llegan</td><td>Pestaña <i>Reportes</i></td></tr>
   <tr><td>Escribir valores y operar objetos de control (con confirmación)</td><td>Pestañas <i>Datos</i> y <i>Control</i></td></tr>
+  <tr><td>Vigilar y operar aparatos con tarjetas en vivo (drag &amp; drop, iconografía de interruptor)</td><td>Pestaña <i>Control</i> · panel de operación</td></tr>
   <tr><td>Capturar y publicar tramas GOOSE y Sampled Values en la capa 2</td><td>Pestañas <i>GOOSE</i> y <i>SV</i></td></tr>
   <tr><td>Descargar registros de perturbación (COMTRADE) del IED</td><td>Pestaña <i>Ficheros</i></td></tr>
-  <tr><td>Arrancar un IED simulado embebido para trabajar sin hardware</td><td>Entorno de pruebas</td></tr>
+  <tr><td>Servir cualquier SCL como <b>IED en vivo</b> (uno o varios, visibles en la red) sin hardware ni línea de comandos</td><td>Entorno de pruebas</td></tr>
 </table>
 <div class="note"><b>Datos de ejemplo.</b> Las capturas y valores de este manual provienen de un
 CID real de subestación —línea <code>LT-SJA</code>— con 7 IEDs (protecciones de línea ABB),
@@ -151,8 +152,9 @@ solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</cod
 <h2>3 · Inicio rápido en 5 pasos</h2>
 <ol>
   <li><b>Arranque la app</b>: <code>pnpm tauri dev</code> (desarrollo) o el binario instalado.</li>
-  <li><b>Sin hardware</b>: pulse <i>Iniciar simulador local</i> (entorno de pruebas) — arranca un
-      IED embebido y rellena la dirección; o arranque <code>iec61850-sim</code> con su propio SCL.</li>
+  <li><b>Sin hardware</b>: abra el <i>Entorno de pruebas</i> (matraz), elija su fichero SCL y pulse
+      <i>Iniciar IED en vivo</i> — la app sirve el modelo como IED MMS real y rellena la dirección.
+      Sin SCL, use el <i>Simulador de ejemplo</i> embebido.</li>
   <li><b>Conectar</b>: escriba <code>127.0.0.1:10102</code> (o la IP del IED, puerto 102) y pulse
       <i>Conectar</i>. El estado pasa a <b>asociado</b> y se descubre el modelo.</li>
   <li><b>Explorar</b>: despliegue el árbol LD → LN → DO y seleccione un objeto: la pestaña
@@ -201,10 +203,22 @@ solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</cod
       <td class="mono">01:0c:cd:01:00:05 · gcb_ESTADO_IED · APPID 0x3005</td></tr>
 </table>
 
-<h3>4.3 Entorno de pruebas (sin hardware)</h3>
-<p>El botón <i>Iniciar simulador local</i> arranca un <b>IED embebido en la propia app</b>
-(servidor MMS in-process con un modelo SCL de ejemplo) y deja la dirección lista para conectar.
-Existe también la variante <i>Iniciar sim TLS</i> con certificados de demostración.</p>
+<h3>4.3 Entorno de pruebas: IEDs en vivo (sin hardware)</h3>
+<p>El diálogo del matraz sirve <b>cualquier fichero SCL como IED MMS real, desde la propia app y
+sin línea de comandos</b>:</p>
+<ul>
+  <li><b>SCL a servir</b> — elija un <code>.cid</code>/<code>.icd</code>/<code>.scd</code> con el
+  botón de examinar.</li>
+  <li><b>Escucha en</b> — <code>0.0.0.0:10102</code> hace el IED <b>visible en toda la red</b>
+  (otros clientes lo descubren y se conectan); <code>127.0.0.1</code> lo limita a esta máquina.</li>
+  <li><b>Iniciar IED en vivo</b> — arranca el servidor. Puede repetir con otros SCL y puertos:
+  cada IED aparece en la lista con su dirección y su botón de detener
+  (<b>banco de subestación</b> con varios IEDs a la vez).</li>
+  <li>La app hace <b>oscilar automáticamente el primer measurand</b> (FC <code>MX</code> flotante)
+  del modelo, para que polling y reportes muestren datos vivos.</li>
+</ul>
+<p>Sin SCL propio, el botón <i>Simulador de ejemplo</i> arranca el IED embebido con un modelo de
+demostración. Existe también la variante <i>Iniciar sim TLS</i> con certificados de prueba (§14).</p>
 
 <!-- ============ 5 ============ -->
 <h2>5 · Navegación del modelo de datos</h2>
@@ -361,6 +375,97 @@ según su <code>ctlModel</code>:</p>
 Cada operación pide <b>confirmación explícita</b> y el resultado (o el <code>AddCause</code> del
 rechazo: 18 <i>select-failed</i>, 10 <i>blocked-by-interlocking</i>…) se muestra en una notificación.</p>
 
+<h3>9.1 Panel de operación (drag &amp; drop)</h3>
+<p>La parte superior de la pestaña <b>Control</b> es un <b>panel de operación</b>: arrastre un
+componente desde el árbol (un DO como <code>Pos</code> o <code>SPCSO1</code>, un control o un
+atributo suelto del panel de detalle) y suéltelo en la zona punteada. Cada componente se convierte
+en una <b>tarjeta con sus valores en tiempo real</b> (el sondeo se activa solo al soltar):</p>
+
+<figure class="fig">
+<svg viewBox="0 0 720 190" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- drop zone -->
+  <rect x="0" y="0" width="720" height="190" rx="10" fill="#fcfcfb" stroke="#c9c8c2" stroke-width="2" stroke-dasharray="7 5"/>
+  <!-- card 1: Pos CERRADO -->
+  <rect x="16" y="16" width="330" height="158" rx="8" fill="white" stroke="#e3e2dd"/>
+  <text x="30" y="40" font-size="12" font-weight="700" class="mono">Pos</text>
+  <rect x="62" y="27" width="38" height="17" rx="4" fill="none" stroke="#2a78d6"/>
+  <text x="81" y="39" text-anchor="middle" font-size="8.5" fill="#1c5cab">DPC</text>
+  <rect x="106" y="27" width="34" height="17" rx="4" fill="#fdf0e5"/>
+  <text x="123" y="39" text-anchor="middle" font-size="8.5" fill="#b25b12">⚡ CO</text>
+  <!-- state block -->
+  <rect x="28" y="52" width="306" height="66" rx="6" fill="#f4f3f0" stroke="#e3e2dd"/>
+  <g>
+    <line x1="58" y1="58" x2="58" y2="66" stroke="#52514e" stroke-width="2"/>
+    <circle cx="58" cy="68" r="2.6" fill="none" stroke="#52514e" stroke-width="1.6"/>
+    <circle cx="58" cy="98" r="2.6" fill="none" stroke="#52514e" stroke-width="1.6"/>
+    <line x1="58" y1="100" x2="58" y2="112" stroke="#52514e" stroke-width="2"/>
+    <line x1="58" y1="98" x2="58" y2="68" stroke="#d03b3b" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <text x="84" y="80" font-size="15" font-weight="800" fill="#d03b3b">CERRADO</text>
+  <rect x="84" y="90" width="42" height="16" rx="4" fill="#e6f4ea"/>
+  <text x="105" y="102" text-anchor="middle" font-size="8.5" fill="#006300">good</text>
+  <text x="134" y="102" font-size="9" fill="#52514e" class="mono">13:05:04.500</text>
+  <!-- rows -->
+  <text x="30" y="136" font-size="9" fill="#8a897f" class="mono">opRcvd</text>
+  <text x="110" y="136" font-size="10" fill="#0d7a52" class="mono" font-weight="600">false</text>
+  <!-- buttons -->
+  <rect x="28" y="146" width="92" height="20" rx="4" fill="#d03b3b"/>
+  <text x="74" y="160" text-anchor="middle" font-size="9.5" fill="white" font-weight="600">Cerrar / ON…</text>
+  <rect x="128" y="146" width="92" height="20" rx="4" fill="#1baf7a"/>
+  <text x="174" y="160" text-anchor="middle" font-size="9.5" fill="white" font-weight="600">Abrir / OFF…</text>
+  <!-- card 2: SPCSO abierto -->
+  <rect x="366" y="16" width="330" height="158" rx="8" fill="white" stroke="#e3e2dd"/>
+  <text x="380" y="40" font-size="12" font-weight="700" class="mono">SPCSO1</text>
+  <rect x="440" y="27" width="38" height="17" rx="4" fill="none" stroke="#2a78d6"/>
+  <text x="459" y="39" text-anchor="middle" font-size="8.5" fill="#1c5cab">SPC</text>
+  <rect x="484" y="27" width="34" height="17" rx="4" fill="#fdf0e5"/>
+  <text x="501" y="39" text-anchor="middle" font-size="8.5" fill="#b25b12">⚡ CO</text>
+  <rect x="378" y="52" width="306" height="66" rx="6" fill="#f4f3f0" stroke="#e3e2dd"/>
+  <g>
+    <line x1="408" y1="58" x2="408" y2="66" stroke="#52514e" stroke-width="2"/>
+    <circle cx="408" cy="68" r="2.6" fill="none" stroke="#52514e" stroke-width="1.6"/>
+    <circle cx="408" cy="98" r="2.6" fill="none" stroke="#52514e" stroke-width="1.6"/>
+    <line x1="408" y1="100" x2="408" y2="112" stroke="#52514e" stroke-width="2"/>
+    <line x1="408" y1="98" x2="424" y2="72" stroke="#8a897f" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <text x="434" y="80" font-size="15" font-weight="800" fill="#8a897f">OFF</text>
+  <rect x="434" y="90" width="42" height="16" rx="4" fill="#e6f4ea"/>
+  <text x="455" y="102" text-anchor="middle" font-size="8.5" fill="#006300">good</text>
+  <text x="484" y="102" font-size="9" fill="#52514e" class="mono">sin sello de tiempo</text>
+  <text x="380" y="136" font-size="9" fill="#8a897f" class="mono">ctlModel</text>
+  <text x="470" y="136" font-size="10" fill="#0d7a52" class="mono" font-weight="600">1 (direct-normal)</text>
+  <rect x="378" y="146" width="92" height="20" rx="4" fill="#d03b3b"/>
+  <text x="424" y="160" text-anchor="middle" font-size="9.5" fill="white" font-weight="600">Cerrar / ON…</text>
+  <rect x="478" y="146" width="92" height="20" rx="4" fill="#1baf7a"/>
+  <text x="524" y="160" text-anchor="middle" font-size="9.5" fill="white" font-weight="600">Abrir / OFF…</text>
+</svg>
+<figcaption>Fig. 4b — Panel de operación: tarjetas creadas por arrastre con símbolo unifilar,
+calidad decodificada, sello de tiempo y botones de mando.</figcaption>
+</figure>
+
+<p><b>Iconografía de estado</b> (estilo IEDScout). El <code>stVal</code> se interpreta según el
+CDC del componente — <code>Dbpos</code> (posición doble, DPC/DPS) o booleano (SPC/SPS):</p>
+<table>
+  <tr><th class="mono">stVal</th><th>Estado</th><th>Símbolo</th><th>Color</th></tr>
+  <tr><td class="mono">0 · 00</td><td>INTERMEDIO (en tránsito)</td><td>brazo discontinuo</td><td>amarillo</td></tr>
+  <tr><td class="mono">1 · 01 · false</td><td>ABIERTO / OFF</td><td>brazo abierto</td><td>verde</td></tr>
+  <tr><td class="mono">2 · 10 · true</td><td>CERRADO / ON</td><td>brazo recto</td><td>rojo</td></tr>
+  <tr><td class="mono">3 · 11</td><td>ERRÓNEO (bad-state)</td><td>aspa ✕</td><td>rojo</td></tr>
+</table>
+<ul>
+  <li>La <b>calidad</b> (<code>q</code>) se decodifica según IEC 61850-7-3: badge
+  <code>good</code>/<code>invalid</code>/<code>questionable</code> con sus banderas
+  (<code>oldData</code>, <code>test</code>, <code>oscillatory</code>…).</li>
+  <li>El <b>sello de tiempo</b> (<code>t</code>) se muestra legible con milisegundos; la época
+  cero aparece como «sin sello de tiempo».</li>
+  <li>Todo cambio de estado o de valor produce un <b>destello</b> en la tarjeta — se ve el
+  efecto de la orden (o del proceso) en el momento en que ocurre.</li>
+  <li>Si el componente tiene <code>Oper</code> (badge naranja <b>CO</b>), la tarjeta ofrece
+  <b>Cerrar / ON</b> y <b>Abrir / OFF</b>, siempre con confirmación previa.</li>
+  <li>El formulario clásico por referencia (<i>Seleccionar</i> / <i>Operar</i>) sigue disponible
+  debajo del panel para casos avanzados (INC, valores enteros, etc.).</li>
+</ul>
+
 <!-- ============ 10 ============ -->
 <h2>10 · Monitor GOOSE y Sampled Values</h2>
 <p>Estas pestañas trabajan en la <b>capa 2</b> (Ethernet): elija la interfaz de red y pulse
@@ -447,7 +552,11 @@ protecciones tras una falta.</p>
 
 <!-- ============ 13 ============ -->
 <h2 class="pagebreak">13 · Simular un IED en la red</h2>
-<p>Además del simulador embebido, la herramienta CLI <code>iec61850-sim</code> convierte
+<div class="note"><b>Desde la UI.</b> Todo lo de esta sección puede hacerse <b>sin línea de
+comandos</b> desde el <i>Entorno de pruebas</i> (§4.3): elegir el SCL, escuchar en
+<code>0.0.0.0</code> y arrancar varios IEDs en vivo a la vez. La CLI sigue siendo útil para
+scripts, arranque automático y puertos privilegiados.</div>
+<p>La herramienta CLI <code>iec61850-sim</code> convierte
 <b>cualquier fichero SCL en un IED vivo</b> accesible desde toda la red — ideal para bancos de
 pruebas, FAT/SAT sin hardware y formación:</p>
 <pre><code># IED con el CID real, accesible desde la LAN:
