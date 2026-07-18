@@ -18,6 +18,9 @@ pub mod sign;
 pub mod link;
 #[cfg(all(feature = "net", target_os = "linux"))]
 pub mod socket;
+#[cfg(all(feature = "net", windows))]
+#[path = "socket_windows.rs"]
+pub mod socket;
 
 pub use auth::{
     AuthStatus, FrameSigner, FrameVerifier, HMAC_SHA256_TAG_LEN, HmacKey, Signer, Verifier, sha256,
@@ -34,5 +37,5 @@ pub use sign::{ECDSA_P256_TAG_LEN, EcdsaError, EcdsaSigner, EcdsaVerifier};
 
 #[cfg(feature = "net")]
 pub use link::{L2Link, MockBus, MockLink};
-#[cfg(all(feature = "net", target_os = "linux"))]
-pub use socket::RawSocket;
+#[cfg(all(feature = "net", any(target_os = "linux", windows)))]
+pub use socket::{RawSocket, interfaces};

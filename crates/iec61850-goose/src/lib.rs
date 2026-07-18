@@ -25,10 +25,11 @@ pub mod link {
     pub use iec61850_l2::{L2Link as GooseLink, MockBus, MockLink};
 }
 
-/// Compatibilidad: el socket AF_PACKET vive ahora en [`iec61850_l2`].
-#[cfg(all(feature = "net", target_os = "linux"))]
+/// Compatibilidad: el socket de capa 2 vive ahora en [`iec61850_l2`]
+/// (AF_PACKET en Linux, Npcap en Windows).
+#[cfg(all(feature = "net", any(target_os = "linux", windows)))]
 pub mod socket {
-    pub use iec61850_l2::RawSocket;
+    pub use iec61850_l2::{RawSocket, interfaces};
 }
 
 pub use config::GooseConfig;

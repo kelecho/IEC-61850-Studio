@@ -13,9 +13,10 @@ categories.workspace = true
 
 [features]
 default = []
-# Enlace de capa 2 (socket AF_PACKET vía libc) + async (tokio). La cabecera
+# Enlace de capa 2 + async (tokio): AF_PACKET vía libc en Linux, Npcap
+# (wpcap.dll cargada en runtime vía libloading) en Windows. La cabecera
 # (eth.rs) compila y se testea sin esta feature.
-net = ["dep:libc", "dep:tokio"]
+net = ["dep:libc", "dep:tokio", "dep:libloading"]
 # Firma asimétrica ECDSA P-256 de tramas GOOSE/SV (IEC 62351-6:2020). Trae el
 # crate auditado `p256` (RustCrypto); sin la feature, la dependencia no entra y
 # solo queda la autenticación HMAC-SHA256 (que es propia, sin dependencias).
@@ -23,9 +24,16 @@ ecdsa = ["dep:p256"]
 
 [dependencies]
 thiserror = { workspace = true }
-libc = { version = "0.2", optional = true }
 tokio = { version = "1", features = ["net", "io-util", "rt", "macros", "sync", "time"], optional = true }
 p256 = { version = "0.13", default-features = false, features = ["ecdsa"], optional = true }
+
+# Backend AF_PACKET (Linux/Unix): libc.
+[target.'cfg(not(windows))'.dependencies]
+libc = { version = "0.2", optional = true }
+
+# Backend Npcap (Windows): wpcap.dll cargada en runtime.
+[target.'cfg(windows)'.dependencies]
+libloading = { version = "0.8", optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

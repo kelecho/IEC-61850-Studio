@@ -4,8 +4,8 @@ name: Installers
 #  - Linux:   .deb / .rpm — la post-instalación aplica setcap CAP_NET_RAW al
 #             binario, así los monitores GOOSE/SV (capa 2) funcionan sin root.
 #  - Windows: instalador NSIS (.exe) — MMS/TCP completo; la capa 2 GOOSE/SV
-#             está deshabilitada (AF_PACKET es solo Linux).
-#  - macOS:   .dmg — mismas capacidades que Windows.
+#             usa Npcap (wpcap.dll en runtime), que el usuario instala aparte.
+#  - macOS:   .dmg — MMS/TCP completo; sin backend de capa 2.
 # Se lanza a mano (workflow_dispatch) o al empujar un tag v*; con tag, los
 # instaladores se adjuntan a la GitHub Release.
 on:

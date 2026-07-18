@@ -36,5 +36,5 @@ pub use publisher::{SvPublisher, SvPublisherHandle};
 #[cfg(feature = "net")]
 pub use subscriber::{SvEvent, SvEventKind, SvFilter, SvSubscriber, SvSubscriberHandle};
 
-#[cfg(all(feature = "net", target_os = "linux"))]
-pub use iec61850_l2::RawSocket;
+#[cfg(all(feature = "net", any(target_os = "linux", windows)))]
+pub use iec61850_l2::{RawSocket, interfaces};

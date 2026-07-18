@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use iec61850::Model;
 use iec61850::ObjectReference;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use iec61850::goose::socket::RawSocket;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use iec61850::goose::{
     ETHERTYPE_GOOSE, GooseConfig, GooseEventKind, GooseFilter, GooseLink, GoosePublisher,
     GooseSubscriber, PcapWriter,
@@ -21,7 +21,7 @@ use iec61850::mms::{
     TlsServerOptions,
 };
 use iec61850::model::{BasicType, DataAttribute, DataObject, FunctionalConstraint};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use iec61850::sv::{
     ETHERTYPE_SV, NineTwoLe, SvChannel, SvConfig, SvEventKind, SvFilter, SvPublisher, SvSubscriber,
 };
@@ -41,11 +41,12 @@ const TLS_CA: &[u8] = include_bytes!("../../test-certs/ca.crt.pem");
 const TLS_SERVER_CRT: &[u8] = include_bytes!("../../test-certs/server.crt.pem");
 const TLS_SERVER_KEY: &[u8] = include_bytes!("../../test-certs/server.key.pem");
 
-/// Mensaje de los stubs no-Linux: la capa 2 usa sockets `AF_PACKET` (Linux).
-/// El resto de la app (MMS/TCP, SCL, IED en vivo) funciona en cualquier SO.
-#[cfg(not(target_os = "linux"))]
+/// Mensaje de los stubs sin backend de capa 2. GOOSE/SV/PCAP usan AF_PACKET
+/// (Linux) o Npcap (Windows); en otros SO (p. ej. macOS) no hay backend. El
+/// resto de la app (MMS/TCP, SCL, IED en vivo) funciona en cualquier SO.
+#[cfg(not(any(target_os = "linux", windows)))]
 const L2_UNSUPPORTED: &str =
-    "captura capa 2 (GOOSE/SV/PCAP) no disponible en este sistema operativo: requiere Linux";
+    "captura capa 2 (GOOSE/SV/PCAP) no disponible en este sistema operativo: requiere Linux o Windows (con Npcap)";
 
 /// Tareas del simulador IED en marcha (servidor + variación de medida).
 struct SimHandle {
@@ -344,7 +345,7 @@ async fn save_text(path: String, content: String) -> Result<(), String> {
 /// interfaz en modo promiscuo (ETH_P_ALL): GOOSE, SV, MMS/C-S, ARP… Se detiene
 /// al llegar a `frames` tramas o tras `secs` segundos sin más tráfico. Devuelve
 /// el nº de tramas capturadas. Requiere CAP_NET_RAW/root.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn capture_pcap(
     iface: String,
@@ -384,7 +385,7 @@ async fn capture_pcap(
     Ok(n)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn capture_pcap(
     iface: String,
@@ -528,7 +529,7 @@ struct PubInfo {
 
 /// Escucha `secs` segundos en `iface` y lista los publicadores GOOSE/SV únicos
 /// (capa 2; requiere CAP_NET_RAW/root).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn discover_l2(iface: String, secs: u64) -> Result<Vec<PubInfo>, String> {
     let secs = if secs == 0 { 4 } else { secs.min(30) };
@@ -593,7 +594,7 @@ async fn discover_l2(iface: String, secs: u64) -> Result<Vec<PubInfo>, String> {
     Ok(out)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn discover_l2(iface: String, secs: u64) -> Result<Vec<PubInfo>, String> {
     let _ = (iface, secs);
@@ -1066,21 +1067,22 @@ async fn sim_stop(state: State<'_, AppState>) -> Result<(), String> {
 
 // --- Monitores GOOSE / SV (capa 2; requieren CAP_NET_RAW/root) ---
 
-/// Lista las interfaces de red disponibles (`/sys/class/net`).
+/// Lista las interfaces de captura disponibles: `/sys/class/net` en Linux, los
+/// dispositivos Npcap en Windows. Vacía en otros SO (o si falta Npcap).
 #[tauri::command]
 fn list_interfaces() -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir("/sys/class/net")
-        .map(|rd| {
-            rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
-                .collect()
-        })
-        .unwrap_or_default();
-    v.sort();
-    v
+    #[cfg(any(target_os = "linux", windows))]
+    {
+        iec61850::goose::socket::interfaces()
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        Vec::new()
+    }
 }
 
 /// Formatea una MAC (`[u8; 6]`) como `aa:bb:cc:dd:ee:ff`.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn mac(m: &[u8; 6]) -> String {
     format!(
         "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -1089,7 +1091,7 @@ fn mac(m: &[u8; 6]) -> String {
 }
 
 /// Evento GOOSE serializado para el frontend.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[derive(Serialize, Clone)]
 struct GoosePayload {
     gocb_ref: String,
@@ -1111,7 +1113,7 @@ struct GoosePayload {
 }
 
 /// Nº de tramas perdidas según el tipo de evento (salto de sqNum).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn goose_lost(k: &GooseEventKind) -> u32 {
     match k {
         GooseEventKind::LossSuspected {
@@ -1122,7 +1124,7 @@ fn goose_lost(k: &GooseEventKind) -> u32 {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn goose_kind(k: &GooseEventKind) -> String {
     match k {
         GooseEventKind::StateChange => "stChange".into(),
@@ -1138,7 +1140,7 @@ fn goose_kind(k: &GooseEventKind) -> String {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn goose_start(
     app: AppHandle,
@@ -1180,7 +1182,7 @@ async fn goose_start(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn goose_start(iface: String, sim_mode: bool) -> Result<(), String> {
     let _ = (iface, sim_mode);
@@ -1196,7 +1198,7 @@ async fn goose_stop(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 /// Un canal del perfil 9-2LE.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[derive(Serialize, Clone)]
 struct SvChan {
     value: i32,
@@ -1204,7 +1206,7 @@ struct SvChan {
 }
 
 /// Evento SV serializado para el frontend.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[derive(Serialize, Clone)]
 struct SvPayload {
     sv_id: String,
@@ -1221,7 +1223,7 @@ struct SvPayload {
 }
 
 /// Nº de muestras perdidas según el tipo de evento (salto de smpCnt).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn sv_lost(k: &SvEventKind) -> u32 {
     match k {
         SvEventKind::SampleLoss { expected, got } => got.wrapping_sub(*expected) as u32,
@@ -1229,7 +1231,7 @@ fn sv_lost(k: &SvEventKind) -> u32 {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn sv_kind(k: &SvEventKind) -> String {
     match k {
         SvEventKind::Sample => "sample".into(),
@@ -1241,7 +1243,7 @@ fn sv_kind(k: &SvEventKind) -> String {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn sv_start(
     app: AppHandle,
@@ -1287,7 +1289,7 @@ async fn sv_start(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn sv_start(iface: String, sim_mode: bool) -> Result<(), String> {
     let _ = (iface, sim_mode);
@@ -1304,11 +1306,11 @@ async fn sv_stop(state: State<'_, AppState>) -> Result<(), String> {
 
 // --- Publicadores GOOSE / SV de demo (para probar los monitores sin IED real) ---
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 const DEMO_SRC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
 
 /// Publica GOOSE de demo en `iface` (alterna un booleano cada 2 s).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn goose_pub_start(
     state: State<'_, AppState>,
@@ -1342,7 +1344,7 @@ async fn goose_pub_start(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn goose_pub_start(iface: String, simulation: bool) -> Result<(), String> {
     let _ = (iface, simulation);
@@ -1358,7 +1360,7 @@ async fn goose_pub_stop(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 /// Publica SV de demo en `iface` (~20 muestras/s, senoide en el canal IA).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn sv_pub_start(
     state: State<'_, AppState>,
@@ -1396,7 +1398,7 @@ async fn sv_pub_start(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
 async fn sv_pub_start(iface: String, simulation: bool) -> Result<(), String> {
     let _ = (iface, simulation);

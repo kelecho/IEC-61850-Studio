@@ -224,6 +224,20 @@ fn set_promiscuous(fd: i32, ifindex: u32) -> Result<(), L2Error> {
     Ok(())
 }
 
+/// Lista las interfaces de red del sistema (`/sys/class/net`), para paridad de
+/// API con el backend Windows (donde los nombres los da Npcap). En Linux se
+/// usan tal cual con [`RawSocket::open`].
+pub fn interfaces() -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir("/sys/class/net")
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
 fn map_os_error() -> L2Error {
     let e = io::Error::last_os_error();
     match e.raw_os_error() {
