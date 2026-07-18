@@ -1,13 +1,5 @@
-import { useState } from "react";
-import {
-  Badge,
-  Box,
-  Group,
-  ScrollArea,
-  Text,
-  UnstyledButton,
-  useComputedColorScheme,
-} from "@mantine/core";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Badge, Box, Group, Text, UnstyledButton, useComputedColorScheme } from "@mantine/core";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import type { TreeNode } from "../model";
 import { cdcCategory, cdcDesc, doDesc, fcColor, lnClassOf, lnDesc, lnIconKey } from "../iec61850";
@@ -48,8 +40,11 @@ type Props = {
   onSelect: (node: TreeNode) => void;
 };
 
-/** Color de familia por papel del nodo (LD / LN / DO / DA). */
-function familyColor(node: TreeNode, role: string): string {
+type Role = "ld" | "ln" | "do" | "da";
+
+/** Color de familia por papel del nodo (LD / LN / DO / DA); acentúa bordes y
+ *  badges — el texto de las etiquetas queda en el color por defecto del tema. */
+function familyColor(node: TreeNode, role: Role): string {
   if (role === "ld") return "indigo";
   if (role === "ln") {
     const cls = lnClassOf(node.label) ?? "";
@@ -59,125 +54,205 @@ function familyColor(node: TreeNode, role: string): string {
   return fcColor(node.fc); // DA
 }
 
-function Node({
-  node,
-  depth,
-  selected,
-  values,
-  forceOpen,
-  maxDepth,
-  onSelect,
-}: {
+/** Altura fija de fila: permite virtualizar con aritmética simple. */
+const ROW_H = 28;
+/** Filas extra pintadas por encima/debajo del viewport. */
+const OVERSCAN = 12;
+/** Con menos nodos que esto, LD y LN arrancan desplegados (modelos pequeños). */
+const AUTO_EXPAND_LIMIT = 1500;
+
+type FlatRow = {
   node: TreeNode;
   depth: number;
-  selected: string | null;
-  values?: Map<string, string>;
-  forceOpen?: boolean;
-  maxDepth: number;
+  expandable: boolean;
+  role: Role;
+};
+
+function flatten(
+  data: TreeNode[],
+  expanded: ReadonlySet<string>,
+  forceOpen: boolean,
+  maxDepth: number,
+): FlatRow[] {
+  const out: FlatRow[] = [];
+  const walk = (nodes: TreeNode[], depth: number) => {
+    for (const n of nodes) {
+      const hasChildren = n.children.length > 0;
+      const expandable = hasChildren && depth < maxDepth;
+      const role: Role = depth === 0 ? "ld" : depth === 1 && hasChildren ? "ln" : hasChildren ? "do" : "da";
+      out.push({ node: n, depth, expandable, role });
+      if (expandable && (forceOpen || expanded.has(n.id))) walk(n.children, depth + 1);
+    }
+  };
+  walk(data, 0);
+  return out;
+}
+
+function countNodes(nodes: TreeNode[]): number {
+  let n = 0;
+  const walk = (ns: TreeNode[]) => {
+    for (const t of ns) {
+      n += 1;
+      walk(t.children);
+    }
+  };
+  walk(nodes);
+  return n;
+}
+
+const Row = memo(function Row({
+  row,
+  top,
+  open,
+  isSel,
+  value,
+  shade,
+  onToggle,
+  onSelect,
+}: {
+  row: FlatRow;
+  top: number;
+  open: boolean;
+  isSel: boolean;
+  value: string | undefined;
+  shade: string;
+  onToggle: (id: string) => void;
   onSelect: (node: TreeNode) => void;
 }) {
-  const hasChildren = node.children.length > 0;
-  const expandable = hasChildren && depth < maxDepth;
-  const [open, setOpen] = useState(depth < 2 || !!forceOpen);
-  // En tema claro subimos el tono (.7) para más contraste; en oscuro .6.
-  const scheme = useComputedColorScheme("light");
-  const shade = scheme === "light" ? "7" : "6";
-  const isSel = node.id === selected;
-  const value = node.reference ? values?.get(node.reference) : undefined;
-  const meaning =
-    node.desc ?? doDesc(node.label) ?? cdcDesc(node.cdc) ?? (hasChildren ? lnDesc(node.label) : null);
-
-  const role = depth === 0 ? "ld" : depth === 1 && hasChildren ? "ln" : hasChildren ? "do" : "da";
+  const { node, depth, expandable, role } = row;
   const color = familyColor(node, role);
   const isLd = role === "ld";
   const isLn = role === "ln";
-  const padY = isLd ? 6 : isLn ? 4 : 3;
-  const textFw = isLd ? 700 : isLn ? 600 : role === "do" ? 500 : 400;
-  const textSize = isLd ? "md" : "sm";
+  const meaning =
+    node.desc ?? doDesc(node.label) ?? cdcDesc(node.cdc) ?? (node.children.length > 0 ? lnDesc(node.label) : null);
 
   return (
-    <Box style={isLd && depth === 0 ? { marginTop: 8 } : undefined}>
-      <UnstyledButton
-        onClick={() => {
-          if (expandable) setOpen((o) => !o);
-          else onSelect(node);
-        }}
-        style={{
-          display: "block",
-          width: "100%",
-          paddingLeft: depth * 18 + 6,
-          paddingTop: padY,
-          paddingBottom: padY,
-          borderRadius: 4,
-          borderTop: isLd ? "1px solid var(--mantine-color-default-border)" : undefined,
-          borderBottom: "1px solid rgba(128,128,128,0.12)", // separador de renglón tenue
-          borderLeft: isLn ? `2px solid var(--mantine-color-${color}-5)` : undefined,
-          background: isSel
-            ? "var(--mantine-color-blue-light)"
-            : isLd
-              ? "var(--mantine-color-default-hover)"
-              : undefined,
-        }}
-      >
-        <Group gap={6} wrap="nowrap">
-          {expandable ? (
-            open ? (
-              <IconChevronDown size={14} color="var(--mantine-color-dimmed)" />
-            ) : (
-              <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
-            )
+    <UnstyledButton
+      onClick={() => {
+        if (expandable) onToggle(node.id);
+        else onSelect(node);
+      }}
+      style={{
+        position: "absolute",
+        top,
+        left: 0,
+        right: 0,
+        height: ROW_H,
+        display: "flex",
+        alignItems: "center",
+        paddingLeft: depth * 18 + 6,
+        borderRadius: 4,
+        borderTop: isLd ? "1px solid var(--mantine-color-default-border)" : undefined,
+        borderBottom: "1px solid rgba(128,128,128,0.12)", // separador de renglón tenue
+        borderLeft: isLn ? `2px solid var(--mantine-color-${color}-5)` : undefined,
+        background: isSel
+          ? "var(--mantine-color-blue-light)"
+          : isLd
+            ? "var(--mantine-color-default-hover)"
+            : undefined,
+      }}
+    >
+      <Group gap={6} wrap="nowrap" style={{ overflow: "hidden" }}>
+        {expandable ? (
+          open ? (
+            <IconChevronDown size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />
           ) : (
-            <Box w={14} />
-          )}
-          <Text size={textSize} fw={textFw} c={`${color}.${shade}`} ff="monospace" style={{ whiteSpace: "nowrap" }}>
-            {node.label}
+            <IconChevronRight size={14} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />
+          )
+        ) : (
+          <Box w={14} style={{ flexShrink: 0 }} />
+        )}
+        <Text
+          size="sm"
+          fw={isLd ? 700 : isLn ? 600 : role === "do" ? 500 : 400}
+          ff="monospace"
+          style={{ whiteSpace: "nowrap" }}
+        >
+          {node.label}
+        </Text>
+        {node.cdc && (
+          <Badge size="sm" variant="outline" color={DO_COLOR[cdcCategory(node.cdc)] ?? "grape"}>
+            {node.cdc}
+          </Badge>
+        )}
+        {node.fc && (
+          <Badge size="sm" variant="light" color={fcColor(node.fc)}>
+            {node.fc}
+          </Badge>
+        )}
+        {node.ty && (
+          <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+            {node.ty}
           </Text>
-          {node.cdc && (
-            <Badge size="sm" variant="outline" color={DO_COLOR[cdcCategory(node.cdc)] ?? "grape"}>
-              {node.cdc}
-            </Badge>
-          )}
-          {node.fc && (
-            <Badge size="sm" variant="light" color={fcColor(node.fc)}>
-              {node.fc}
-            </Badge>
-          )}
-          {node.ty && (
-            <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {node.ty}
-            </Text>
-          )}
-          {value !== undefined && (
-            <Text size="sm" ff="monospace" c={`teal.${shade}`} fw={600} style={{ whiteSpace: "nowrap" }}>
-              = {value}
-            </Text>
-          )}
-          {meaning && (
-            <Text size="sm" c="dimmed" fs="italic" style={{ whiteSpace: "nowrap" }}>
-              — {meaning}
-            </Text>
-          )}
-        </Group>
-      </UnstyledButton>
-      {open &&
-        expandable &&
-        node.children.map((c) => (
-          <Node
-            key={c.id}
-            node={c}
-            depth={depth + 1}
-            selected={selected}
-            values={values}
-            forceOpen={forceOpen}
-            maxDepth={maxDepth}
-            onSelect={onSelect}
-          />
-        ))}
-    </Box>
+        )}
+        {value !== undefined && (
+          <Text size="sm" ff="monospace" c={`teal.${shade}`} fw={600} style={{ whiteSpace: "nowrap" }}>
+            = {value}
+          </Text>
+        )}
+        {meaning && (
+          <Text size="sm" c="dimmed" fs="italic" style={{ whiteSpace: "nowrap" }}>
+            — {meaning}
+          </Text>
+        )}
+      </Group>
+    </UnstyledButton>
   );
-}
+});
 
 export function TreeView({ data, selected, values, forceOpen, maxDepth, onSelect }: Props) {
+  const depthMax = maxDepth ?? Number.POSITIVE_INFINITY;
+  const scheme = useComputedColorScheme("light");
+  // En tema claro subimos el tono (.7) para más contraste; en oscuro .6.
+  const shade = scheme === "light" ? "7" : "6";
+
+  // Modelos pequeños: LD y LN desplegados de inicio (comportamiento clásico).
+  // Modelos grandes (CID/SCD reales): todo plegado — el usuario abre lo que mira.
+  const initialExpanded = useMemo(() => {
+    const set = new Set<string>();
+    if (countNodes(data) <= AUTO_EXPAND_LIMIT) {
+      for (const ld of data) {
+        set.add(ld.id);
+        for (const ln of ld.children) set.add(ln.id);
+      }
+    } else {
+      for (const ld of data) set.add(ld.id);
+    }
+    return set;
+  }, [data]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(initialExpanded);
+  useEffect(() => setExpanded(initialExpanded), [initialExpanded]);
+
+  const rows = useMemo(
+    () => flatten(data, expanded, !!forceOpen, depthMax),
+    [data, expanded, forceOpen, depthMax],
+  );
+
+  // Virtualización: solo se montan las filas dentro del viewport (+overscan).
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewH, setViewH] = useState(600);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewH(el.clientHeight));
+    ro.observe(el);
+    setViewH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  const onToggle = useMemo(
+    () => (id: string) => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [],
+  );
+
   if (data.length === 0) {
     return (
       <Text c="dimmed" size="sm">
@@ -185,20 +260,31 @@ export function TreeView({ data, selected, values, forceOpen, maxDepth, onSelect
       </Text>
     );
   }
+
+  const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const last = Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
+
   return (
-    <ScrollArea h="100%" type="auto">
-      {data.map((n) => (
-        <Node
-          key={n.id}
-          node={n}
-          depth={0}
-          selected={selected}
-          values={values}
-          forceOpen={forceOpen}
-          maxDepth={maxDepth ?? Number.POSITIVE_INFINITY}
-          onSelect={onSelect}
-        />
-      ))}
-    </ScrollArea>
+    <div
+      ref={viewportRef}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      style={{ height: "100%", overflowY: "auto", overflowX: "hidden" }}
+    >
+      <div style={{ position: "relative", height: rows.length * ROW_H }}>
+        {rows.slice(first, last).map((row, i) => (
+          <Row
+            key={row.node.id}
+            row={row}
+            top={(first + i) * ROW_H}
+            open={forceOpen || expanded.has(row.node.id)}
+            isSel={row.node.id === selected}
+            value={row.node.reference ? values?.get(row.node.reference) : undefined}
+            shade={shade}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
