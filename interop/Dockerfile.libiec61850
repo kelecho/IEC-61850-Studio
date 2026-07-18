@@ -16,11 +16,15 @@ RUN git clone --depth 1 --branch "${LIBIEC61850_REF}" \
 # Compila la librería y el ejemplo de servidor con E/S básica.
 RUN make -j"$(nproc)" \
     && make -C examples/server_example_basic_io -j"$(nproc)" \
-    && make -C examples/server_example_control -j"$(nproc)"
+    && make -C examples/server_example_control -j"$(nproc)" \
+    && make -C examples/iec61850_client_example1 -j"$(nproc)"
 
 FROM debian:bookworm-slim
 COPY --from=build /src/examples/server_example_basic_io/server_example_basic_io /usr/local/bin/
 COPY --from=build /src/examples/server_example_control/server_example_control /usr/local/bin/
+# Cliente de referencia para el sentido inverso (su cliente ↔ nuestro servidor):
+#   docker run --rm --network host <imagen> client_example1 127.0.0.1 10102
+COPY --from=build /src/examples/iec61850_client_example1/client_example1 /usr/local/bin/
 # Los ejemplos escuchan en el 102 (puerto MMS estándar).
 EXPOSE 102
 CMD ["server_example_basic_io"]

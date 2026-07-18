@@ -1012,3 +1012,199 @@ async fn respects_max_connections() {
     let c3 = MmsClient::connect(addr).await.expect("3ª tras liberar");
     assert_eq!(c3.identify().await.unwrap().vendor, "ACME");
 }
+
+// --- Negociación real de Sesión/Presentación (ISO 8327/8823) ----------------
+
+/// Cliente "extraño pero conforme": propone los contextos de presentación en
+/// IDs NO estándar (ACSE=5, MMS=7) más un contexto desconocido (id 9). Un
+/// servidor de plantilla (pre-negociación) contestaría la fase de datos con el
+/// context-id 3 cacheado y un result-list de 2 entradas fijas; el negociado
+/// debe responder a los 3 contextos EN ORDEN (aceptar/rechazar) y usar el id 7
+/// del cliente en la fase de datos.
+#[tokio::test]
+async fn association_negotiates_nonstandard_context_ids() {
+    use iec61850_mms::ber::reader::BerReader;
+    use iec61850_mms::ber::tag::{Tag, universal};
+    use iec61850_mms::ber::writer::BerWriter;
+    use iec61850_mms::mms::{InitiateRequest, pdu};
+    use iec61850_mms::transport::{cotp, tpkt};
+    use iec61850_mms::upper::{acse, presentation, session};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const ACSE_ID: i64 = 5;
+    const MMS_ID: i64 = 7;
+
+    let (addr, _handle) = start_server(100).await;
+    let mut sock = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+    async fn send(sock: &mut tokio::net::TcpStream, tpdu: &[u8]) {
+        sock.write_all(&tpkt::frame(tpdu)).await.unwrap();
+    }
+    /// Lee un TPKT y devuelve el TSDU (payload del DT sin cabecera COTP).
+    async fn recv(sock: &mut tokio::net::TcpStream) -> Vec<u8> {
+        let mut hdr = [0u8; tpkt::HEADER_LEN];
+        sock.read_exact(&mut hdr).await.unwrap();
+        let len = tpkt::payload_len(&hdr).unwrap();
+        let mut payload = vec![0u8; len];
+        sock.read_exact(&mut payload).await.unwrap();
+        cotp::parse_data_tpdu(&payload).map(<[u8]>::to_vec).unwrap()
+    }
+
+    // COTP CR → CC.
+    sock.write_all(&tpkt::frame(&cotp::connection_request(0x0007)))
+        .await
+        .unwrap();
+    let mut hdr = [0u8; tpkt::HEADER_LEN];
+    sock.read_exact(&mut hdr).await.unwrap();
+    let mut cc = vec![0u8; tpkt::payload_len(&hdr).unwrap()];
+    sock.read_exact(&mut cc).await.unwrap();
+    cotp::parse_connection_confirm(&cc).unwrap();
+
+    // CP artesanal con IDs 5/7 y un contexto extra desconocido (id 9).
+    let aarq = acse::aarq(&InitiateRequest::default().encode());
+    let ber_ts: [u32; 3] = [2, 1, 1];
+    let mut w = BerWriter::new();
+    w.tlv(Tag::universal(17, true), |w| {
+        w.tlv(Tag::context(0, true), |w| {
+            w.integer(Tag::context(0, false), 1); // normal-mode
+        });
+        w.tlv(Tag::context(2, true), |w| {
+            w.octet_string(Tag::context(1, false), &[0, 0, 0, 9]); // calling
+            w.octet_string(Tag::context(2, false), &[0, 0, 0, 9]); // called
+            w.tlv(Tag::context(4, true), |w| {
+                for (id, oid) in [
+                    (ACSE_ID, &[2u32, 2, 1, 0, 1][..]),
+                    (MMS_ID, &[1, 0, 9506, 2, 1][..]),
+                    (9, &[1, 3, 6, 1, 4][..]), // abstract-syntax desconocido
+                ] {
+                    w.sequence(|w| {
+                        w.integer(universal::INTEGER, id);
+                        w.object_identifier(universal::OID, oid);
+                        w.sequence(|w| w.object_identifier(universal::OID, &ber_ts));
+                    });
+                }
+            });
+            w.raw(&presentation::user_data(&aarq, ACSE_ID));
+        });
+    });
+    let cp = w.into_bytes();
+    send(&mut sock, &cotp::data_tpdu(&session::connect(&cp))).await;
+
+    // Respuesta: el result-list debe traer TRES entradas (2 aceptaciones + 1
+    // provider-rejection por abstract-syntax) y el AARE debe decodificar.
+    let resp = recv(&mut sock).await;
+    let aare = presentation::extract_inner_pdu(&resp).unwrap();
+    acse::parse_aare(aare).expect("AARE aceptado");
+    let set_start = resp.iter().position(|b| *b == 0x31).unwrap();
+    let mut r = BerReader::new(&resp[set_start..]);
+    let set = r.read_tlv().unwrap();
+    let mut results = Vec::new();
+    let mut sr = BerReader::new(set.content);
+    while !sr.is_empty() {
+        let item = sr.read_tlv().unwrap();
+        if item.tag != Tag::context(2, true) {
+            continue;
+        }
+        let mut pr = BerReader::new(item.content);
+        while !pr.is_empty() {
+            let p = pr.read_tlv().unwrap();
+            if p.tag != Tag::context(5, true) {
+                continue;
+            }
+            let mut rr = BerReader::new(p.content);
+            while !rr.is_empty() {
+                let e = rr.read_tlv().unwrap();
+                let mut er = BerReader::new(e.content);
+                let res = er.read_tlv().unwrap();
+                results.push(iec61850_mms::ber::prim::decode_integer(res.content).unwrap());
+            }
+        }
+    }
+    assert_eq!(
+        results,
+        vec![0, 0, 2],
+        "result-list debe responder a los 3 contextos en orden (acc, acc, provider-rejection)"
+    );
+
+    // Fase de datos: Identify bajo el ctx MMS=7 del cliente; la respuesta debe
+    // volver TAMBIÉN bajo el ctx 7 (no el 3 de plantilla).
+    let ident_req = pdu::encode_confirmed_request(1, |w| {
+        w.tlv(Tag::context(2, false), |_| {}); // identify (tag [2], vacío)
+    });
+    let ud = presentation::user_data(&ident_req, MMS_ID);
+    send(&mut sock, &cotp::data_tpdu(&session::data(&ud))).await;
+
+    let resp = recv(&mut sock).await;
+    // El fully-encoded-data de la respuesta lleva el presentation-context-id 7.
+    let fed_start = resp.iter().position(|b| *b == 0x61).unwrap();
+    let mut r = BerReader::new(&resp[fed_start..]);
+    let fed = r.read_tlv().unwrap();
+    let mut fr = BerReader::new(fed.content);
+    let pdv = fr.expect(universal::SEQUENCE).unwrap();
+    let mut pr = BerReader::new(pdv);
+    let ctx = pr.expect(universal::INTEGER).unwrap();
+    assert_eq!(
+        iec61850_mms::ber::prim::decode_integer(ctx).unwrap(),
+        MMS_ID,
+        "la fase de datos debe usar el context-id MMS propuesto por el cliente"
+    );
+    // Y el PDU interno es la respuesta Identify correcta.
+    let inner = presentation::extract_inner_pdu(&resp).unwrap();
+    let cr = pdu::parse_confirmed_response(inner).unwrap();
+    let id = iec61850_mms::mms::identify::decode_response(&cr.service).unwrap();
+    assert_eq!(id.vendor, "ACME");
+}
+
+/// Un CP cuyos contextos no incluyen MMS con BER debe rechazarse (el servidor
+/// cierra sin asociar en vez de aceptar a ciegas como la plantilla anterior).
+#[tokio::test]
+async fn association_rejects_cp_without_usable_contexts() {
+    use iec61850_mms::ber::tag::{Tag, universal};
+    use iec61850_mms::ber::writer::BerWriter;
+    use iec61850_mms::mms::InitiateRequest;
+    use iec61850_mms::transport::{cotp, tpkt};
+    use iec61850_mms::upper::{acse, presentation, session};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (addr, _handle) = start_server(100).await;
+    let mut sock = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+    sock.write_all(&tpkt::frame(&cotp::connection_request(0x0008)))
+        .await
+        .unwrap();
+    let mut hdr = [0u8; tpkt::HEADER_LEN];
+    sock.read_exact(&mut hdr).await.unwrap();
+    let mut cc = vec![0u8; tpkt::payload_len(&hdr).unwrap()];
+    sock.read_exact(&mut cc).await.unwrap();
+
+    // CP con un único contexto de abstract-syntax desconocido.
+    let aarq = acse::aarq(&InitiateRequest::default().encode());
+    let mut w = BerWriter::new();
+    w.tlv(Tag::universal(17, true), |w| {
+        w.tlv(Tag::context(0, true), |w| {
+            w.integer(Tag::context(0, false), 1);
+        });
+        w.tlv(Tag::context(2, true), |w| {
+            w.tlv(Tag::context(4, true), |w| {
+                w.sequence(|w| {
+                    w.integer(universal::INTEGER, 1);
+                    w.object_identifier(universal::OID, &[1, 3, 6, 1, 4]);
+                    w.sequence(|w| w.object_identifier(universal::OID, &[2, 1, 1]));
+                });
+            });
+            w.raw(&presentation::user_data(&aarq, 1));
+        });
+    });
+    let cp = w.into_bytes();
+    sock.write_all(&tpkt::frame(&cotp::data_tpdu(&session::connect(&cp))))
+        .await
+        .unwrap();
+
+    // El servidor no asocia: cierra la conexión (0 bytes) en vez de aceptar.
+    let mut buf = [0u8; 1];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), sock.read(&mut buf))
+        .await
+        .expect("el servidor debe cerrar, no colgarse")
+        .unwrap_or(0);
+    assert_eq!(n, 0, "se esperaba cierre de conexión sin AARE");
+}

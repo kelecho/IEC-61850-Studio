@@ -1466,18 +1466,61 @@ async fn handle_connection(
     auth: Arc<AuthPolicy>,
     #[cfg(feature = "tls")] revocation: Option<Arc<crate::transport::tls::RevocationSource>>,
 ) -> Result<(), MmsError> {
+    // Construye la respuesta de asociación (ACCEPT de sesión + CPA) para un
+    // AARE dado, con los parámetros negociados con este peer concreto.
+    type AcceptBuilder = Box<dyn Fn(&[u8]) -> Vec<u8> + Send>;
+
     // Todo el handshake (COTP CR→CC + asociación ACSE) bajo un único timeout:
     // un peer que abre el socket y no progresa se descarta pronto.
-    let role = tokio::time::timeout(limits.handshake_timeout, async {
+    let (role, mms_ctx) = tokio::time::timeout(limits.handshake_timeout, async {
         // COTP: CR → CC.
         let cr = conn.recv().await?;
         let client_ref = cotp::parse_connection_request(&cr)?;
         conn.send(&cotp::connection_confirm(client_ref, OUR_SRC_REF))
             .await?;
 
-        // Asociación: autentica (IEC 62351-4) antes de aceptar.
+        // Asociación. Negociación real de Sesión (ISO 8327) y Presentación
+        // (ISO 8823): se parsea la SPDU CONNECT y el CP, se responde a CADA
+        // contexto propuesto (aceptando ACSE/MMS con BER, rechazando el resto
+        // con su razón) y la fase de datos usa el context-id MMS del cliente.
+        // Si el peer manda algo no parseable, fallback al camino tolerante
+        // (escaneo del fully-encoded-data + CPA de plantilla).
         let assoc = conn.recv_data().await?;
-        let aarq = presentation::extract_inner_pdu(&assoc)?;
+        let negotiation = session::parse_connect(&assoc)
+            .and_then(|sess| Ok((presentation::parse_cp(sess.user_data)?, sess)));
+        let (aarq, accept_of, mms_ctx): (&[u8], AcceptBuilder, i64) = match &negotiation {
+            Ok((cp, sess)) => {
+                let neg = presentation::negotiate(&cp.contexts);
+                let (Some(acse_id), Some(mms_id)) = (neg.acse_id, neg.mms_id) else {
+                    // Sin contexto ACSE o MMS utilizable no puede viajar ni el
+                    // AARE: se cierra (rechazo a nivel de presentación).
+                    return Err(MmsError::AssociateRejected(format!(
+                        "CP sin contextos ACSE/MMS aceptables: {:?}",
+                        neg.verdicts
+                    )));
+                };
+                let called = cp.called_selector.map(|s| s.to_vec());
+                let version = sess.negotiated_version();
+                let builder: AcceptBuilder = Box::new(move |aare: &[u8]| {
+                    session::accept_with_version(
+                        &presentation::connect_cpa_negotiated(
+                            aare,
+                            &neg,
+                            called.as_deref(),
+                            acse_id,
+                        ),
+                        version,
+                    )
+                });
+                (cp.inner_pdu, builder, mms_id)
+            }
+            Err(_) => {
+                let aarq = presentation::extract_inner_pdu(&assoc)?;
+                let builder: AcceptBuilder =
+                    Box::new(|aare: &[u8]| session::accept(&presentation::connect_cpa(aare)));
+                (aarq, builder, presentation::MMS_CONTEXT_ID)
+            }
+        };
         let password = acse::extract_auth_password(aarq);
         // Certificado de cliente (mTLS), si lo hubo: se valida (IEC 62351-9) —
         // vigencia y, con CRL configurada, no revocación — y se extrae el CN.
@@ -1491,7 +1534,7 @@ async fn handle_connection(
                 if let Err(e) =
                     crate::transport::tls::validate_certificate(&der, revocation.as_deref(), now)
                 {
-                    let reject = session::accept(&presentation::connect_cpa(&acse::aare_reject()));
+                    let reject = accept_of(&acse::aare_reject());
                     let _ = conn.send(&cotp::data_tpdu(&reject)).await;
                     return Err(MmsError::AssociateRejected(format!(
                         "certificado rechazado (62351-9): {e}"
@@ -1507,7 +1550,7 @@ async fn handle_connection(
             Some(role) => role,
             None => {
                 // Autenticación fallida: responder AARE de rechazo y cerrar.
-                let reject = session::accept(&presentation::connect_cpa(&acse::aare_reject()));
+                let reject = accept_of(&acse::aare_reject());
                 let _ = conn.send(&cotp::data_tpdu(&reject)).await;
                 return Err(MmsError::AssociateRejected(
                     "autenticación fallida (62351-4)".into(),
@@ -1517,9 +1560,9 @@ async fn handle_connection(
         let inner = acse::parse_aarq(aarq)?;
         let req = InitiateRequest::decode(inner)?;
         let resp = InitiateResponse::accept(&req);
-        let accept = session::accept(&presentation::connect_cpa(&acse::aare(&resp.encode())));
+        let accept = accept_of(&acse::aare(&resp.encode()));
         conn.send(&cotp::data_tpdu(&accept)).await?;
-        Ok::<_, MmsError>(role)
+        Ok::<_, MmsError>((role, mms_ctx))
     })
     .await
     .map_err(|_| MmsError::Timeout)??;
@@ -1555,17 +1598,17 @@ async fn handle_connection(
                             .handle_request(invoke, &service, &model, &store, &change_tx, &buffers)
                             .await;
                         for msg in &out.pre {
-                            send_report(&mut writer, msg).await?;
+                            send_report(&mut writer, mms_ctx, msg).await?;
                         }
-                        send_report(&mut writer, &out.resp).await?;
+                        send_report(&mut writer, mms_ctx, &out.resp).await?;
                         for msg in &out.post {
-                            send_report(&mut writer, msg).await?;
+                            send_report(&mut writer, mms_ctx, msg).await?;
                         }
                     }
                     PduKind::ConcludeRequest => {
                         let mut w = BerWriter::new();
                         w.tlv(pdu::mmspdu::CONCLUDE_RESPONSE, |_| {});
-                        send_report(&mut writer, &w.into_bytes()).await?;
+                        send_report(&mut writer, mms_ctx, &w.into_bytes()).await?;
                         break;
                     }
                     _ => break,
@@ -1576,7 +1619,7 @@ async fn handle_connection(
                 match ch {
                     Ok(change) => {
                         for rep in state.on_value_change(&change) {
-                            send_report(&mut writer, &rep).await?;
+                            send_report(&mut writer, mms_ctx, &rep).await?;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1596,7 +1639,7 @@ async fn handle_connection(
                 match key {
                     Ok(key) => {
                         for rep in state.on_buffer(&key, &buffers) {
-                            send_report(&mut writer, &rep).await?;
+                            send_report(&mut writer, mms_ctx, &rep).await?;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1611,7 +1654,7 @@ async fn handle_connection(
 
             _ = async { match next_int { Some(t) => sleep_until(t).await, None => std::future::pending().await } } => {
                 for rep in state.on_integrity(&store).await {
-                    send_report(&mut writer, &rep).await?;
+                    send_report(&mut writer, mms_ctx, &rep).await?;
                 }
             }
         }
@@ -2648,7 +2691,9 @@ fn build_name_list(model: &ServerModel, req: &GetNameListRequest) -> GetNameList
     }
 }
 
-async fn send_report(writer: &mut IsoWriter, pdu: &[u8]) -> Result<(), MmsError> {
-    let ud = presentation::user_data(pdu, presentation::MMS_CONTEXT_ID);
+/// Envía un PDU MMS en la fase de datos bajo el context-id de presentación
+/// que el CLIENTE propuso para MMS en su CP (negociación ISO 8823).
+async fn send_report(writer: &mut IsoWriter, mms_ctx: i64, pdu: &[u8]) -> Result<(), MmsError> {
+    let ud = presentation::user_data(pdu, mms_ctx);
     writer.send(&cotp::data_tpdu(&session::data(&ud))).await
 }

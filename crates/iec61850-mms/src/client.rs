@@ -165,6 +165,9 @@ impl MmsClient {
         let cp = presentation::connect_cp(&aarq);
         conn.send(&cotp::data_tpdu(&session::connect(&cp))).await?;
         let resp = recv_data_with_timeout(&mut conn).await?;
+        // Si el servidor rechazó el contexto de presentación MMS en su
+        // Result-list, fallar aquí con la causa (no después, con PDUs opacos).
+        presentation::check_cpa_results(&resp)?;
         let aare = presentation::extract_inner_pdu(&resp)?;
         let negotiated = InitiateResponse::decode(acse::parse_aare(aare)?)?;
 

@@ -75,6 +75,21 @@ cargo run -p iec61850-sim -- \
 getRCBValues, setRCBValues (activar reporte) y recepción de InformationReports.
 Verificado extremo a extremo contra `iec61850-sim`.
 
+La imagen del banco incluye `client_example1` compilado, así que el sentido
+inverso se puede lanzar sin checkout local:
+
+```sh
+cargo run -p iec61850-sim -- --scl <simpleIO_direct_control.cid> --bind 0.0.0.0:10105 &
+docker run --rm --network host \
+  "$(docker compose -f interop/docker-compose.yml config --images | head -1)" \
+  client_example1 127.0.0.1 10105
+```
+
+Con la **negociación real de Sesión/Presentación** del servidor (ISO 8327/8823:
+parseo de la SPDU CONNECT y del CP, Result-list respondiendo a cada contexto
+propuesto, fase de datos bajo el context-id MMS del cliente), este flujo se
+verificó de nuevo completo: asociación, lecturas y reportes recibidos.
+
 ## En CI
 
 El sentido 1 (nuestro cliente ↔ libiec61850) corre automáticamente en
