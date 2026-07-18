@@ -189,11 +189,46 @@ seleccionada u **Operar** un control `[CO]` (ambas piden **confirmación**).
 ⚠ Escribir/Operar modifican el IED: úsalo contra el simulador o equipos fuera de
 servicio.
 
-## Empaquetar (opcional)
+## Empaquetar / instaladores
 
-`pnpm tauri build` genera un instalable. Antes, genera iconos
-(`pnpm tauri icon ruta/al/logo.png`) y pon `bundle.active = true` en
-`src-tauri/tauri.conf.json`.
+`pnpm tauri build` genera el instalable del SO actual (los iconos y
+`bundle.active = true` ya están en `src-tauri/tauri.conf.json`):
+
+- **Linux:** `.deb` y `.rpm`. La **post-instalación** aplica
+  `setcap cap_net_raw+ep` al binario instalado, así los monitores GOOSE/SV
+  (capa 2) funcionan **sin root** y sin pasos manuales.
+- **Windows:** instalador **NSIS** (`.exe`). WebView2 lo instala el propio
+  instalador si falta. La capa 2 (GOOSE/SV/PCAP) usa **Npcap**
+  (`wpcap.dll` cargada en tiempo de ejecución): instala Npcap desde
+  <https://npcap.com> en modo *WinPcap API-compatible*. MMS/TCP funciona sin él.
+- **macOS:** `.dmg`. MMS/TCP completo; sin backend de capa 2.
+
+El workflow **`.github/workflows/installers.yml`** construye los tres en CI
+(matriz ubuntu/windows/macos) al empujar un **tag `v*`** y adjunta los
+instaladores a la GitHub Release.
+
+### Firma de código (Windows)
+
+Sin firmar, el instalador `.exe` dispara el aviso *SmartScreen* («editor
+desconocido»). Para firmarlo en CI con Authenticode, añade al repositorio dos
+**secretos** de GitHub Actions (el paso de firma se activa solo si existen):
+
+- `WINDOWS_PFX_BASE64` — el certificado `.pfx` en base64
+  (`base64 -w0 cert.pfx` en Linux/macOS, o `certutil -encode`).
+- `WINDOWS_PFX_PASSWORD` — su contraseña.
+
+El workflow firma el instalador con `signtool` (SDK de Windows, ya en el
+runner) y sella el tiempo. Sin los secretos, el build sale **sin firmar** pero
+funcional.
+
+### Smoke test (Windows)
+
+Tras instalar el `.exe`, `scripts/smoke-windows.ps1` comprueba las piezas que
+solo dependen del SO (binario, WebView2, Npcap, arranque):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1
+```
 
 ## Arquitectura
 

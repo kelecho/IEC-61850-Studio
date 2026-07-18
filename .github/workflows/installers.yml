@@ -35,6 +35,11 @@ jobs:
             bundles: dmg
             path: target/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.os }}
+    # A nivel de job para poder comprobarlo en el `if` del paso de firma
+    # (el contexto `secrets` no está disponible en las condiciones `if`).
+    env:
+      WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+      WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +70,25 @@ jobs:
       - name: Construir instalador
         working-directory: apps/iec61850-tauri
         run: pnpm tauri build --bundles ${{ matrix.bundles }}
+
+      # Firma Authenticode del instalador NSIS. Solo se ejecuta si el repo tiene
+      # configurados los secretos WINDOWS_PFX_BASE64 (certificado .pfx en base64)
+      # y WINDOWS_PFX_PASSWORD; sin ellos, el build sale sin firmar (funciona
+      # igual, pero Windows SmartScreen avisa "editor desconocido"). Firma con
+      # signtool del SDK de Windows (ya presente en el runner) y sella el tiempo.
+      - name: Firmar el instalador (Windows, si hay certificado)
+        if: runner.os == 'Windows' && env.WINDOWS_PFX_BASE64 != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          Get-ChildItem target/release/bundle/nsis/*.exe | ForEach-Object {
+            & $signtool.FullName sign /f $pfx /p $env:WINDOWS_PFX_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+          }
+          Remove-Item $pfx -Force
 
       - uses: actions/upload-artifact@v4
         with:
