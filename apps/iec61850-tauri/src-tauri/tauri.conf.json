@@ -23,8 +23,18 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
-    "icon": ["icons/icon.png"]
+    "active": true,
+    "targets": ["deb", "rpm"],
+    "icon": ["icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "Cliente de diagnóstico y simulación IEC 61850",
+    "linux": {
+      "deb": {
+        "postInstallScript": "scripts/pkg-postinst.sh"
+      },
+      "rpm": {
+        "postInstallScript": "scripts/pkg-postinst.sh"
+      }
+    }
   }
 }
