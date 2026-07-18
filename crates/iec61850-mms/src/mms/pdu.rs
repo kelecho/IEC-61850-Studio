@@ -36,8 +36,11 @@ pub mod service {
     pub const DEFINE_NAMED_VARIABLE_LIST: Tag = Tag::context(11, true);
     /// La **respuesta** de DefineNamedVariableList es `NULL` → tag `[11]` primitivo.
     pub const DEFINE_NAMED_VARIABLE_LIST_RESPONSE: Tag = Tag::context(11, false);
-    pub const DELETE_NAMED_VARIABLE_LIST: Tag = Tag::context(12, true);
-    pub const GET_NAMED_VARIABLE_LIST_ATTRIBUTES: Tag = Tag::context(13, true);
+    /// ISO 9506-2: getNamedVariableListAttributes = `[12]`,
+    /// deleteNamedVariableList = `[13]` (verificado contra libiec61850, que
+    /// rechazaba con pdu-error la forma invertida que usábamos antes).
+    pub const GET_NAMED_VARIABLE_LIST_ATTRIBUTES: Tag = Tag::context(12, true);
+    pub const DELETE_NAMED_VARIABLE_LIST: Tag = Tag::context(13, true);
     /// ReadJournal (logs, ISO 9506): tag `[65]` constructed (multi-byte `bf 41`).
     pub const READ_JOURNAL: Tag = Tag::context(65, true);
     // Servicios de transferencia de ficheros (tags altos, multi-byte).

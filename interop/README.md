@@ -139,6 +139,17 @@ regresión propia (no vendorizada). Historial:
   agrupados): rompían la deserialización serde. Corregido con captura en
   `$value`+enum; regresión en `fixtures/icd/interleaved.icd`. Con ello 44/46
   ficheros de libiec61850 parsean (los 2 restantes son inválidos a propósito).
+- **Tags MMS de named variable lists invertidos.** Usábamos
+  deleteNamedVariableList=`[12]` y getNamedVariableListAttributes=`[13]`; ISO
+  9506-2 define `[12]`=getAttrs y `[13]`=delete. libiec61850 rechazaba nuestro
+  GetNamedVariableListAttributes con reject-PDU (pdu-error). El loopback no lo
+  veía (ambos lados compartían la inversión). Corregido en `mms/pdu.rs`;
+  verificado en ambos sentidos (resolución de datasets contra su servidor y
+  `client_example4` contra el nuestro).
+- **DatSet/dataset de reportes en nombre corto.** El servidor servía y
+  reportaba el dataset como `"ds1"`; 8-1 usa la referencia completa
+  (`"IED1LD0/LLN0$ds1"`, como libiec61850). Corregido (`RcbDef::dataset_ref`),
+  con lookup tolerante a las tres formas de nombre.
 
 Servicios verificados contra libiec61850 v1.6.1 (cliente→servidor): asociación ·
 Identify · GetServerDirectory · GetLogicalDeviceDirectory · Read · Write · control

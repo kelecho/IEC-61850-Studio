@@ -311,6 +311,27 @@ async fn interop_reporting_urcb() {
                 report.dataset,
                 report.entries.len()
             );
+            // Decodificación guiada por el dataset resuelto: si el reporte
+            // declara su dataset, cada entrada debe llegar con su referencia
+            // (resuelta con GetNamedVariableListAttributes al habilitar).
+            if report.dataset.is_some() {
+                for e in &report.entries {
+                    assert!(
+                        e.reference.is_some(),
+                        "entrada {} sin referencia (dataset {:?}): {report:?}",
+                        e.member_index,
+                        report.dataset
+                    );
+                }
+                eprintln!(
+                    "referencias resueltas: {:?}",
+                    report
+                        .entries
+                        .iter()
+                        .filter_map(|e| e.reference.as_ref().map(ToString::to_string))
+                        .collect::<Vec<_>>()
+                );
+            }
         }
         Ok(None) => panic!("el canal de reportes se cerró sin recibir ninguno"),
         Err(_) => panic!(

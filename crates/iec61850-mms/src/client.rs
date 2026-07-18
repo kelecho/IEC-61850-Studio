@@ -59,12 +59,20 @@ async fn recv_data_with_timeout(conn: &mut IsoConnection) -> Result<Vec<u8>, Mms
 }
 
 type PendingMap = HashMap<u32, oneshot::Sender<Result<Vec<u8>, MmsError>>>;
+/// Miembros de un dataset resuelto (`(domain, item)` en orden), compartidos
+/// entre la API y la tarea lectora.
+type DatasetMembers = Arc<Vec<(String, String)>>;
 
 struct Shared {
     pending: Mutex<PendingMap>,
     /// Último `LastApplError` recibido (control): la causa detallada del último
     /// rechazo/terminación negativa, correlacionable por objeto de control.
     last_appl_error: std::sync::Mutex<Option<LastApplError>>,
+    /// Miembros resueltos por dataset (`"domain/LN$ds"` → miembros en orden):
+    /// guía la decodificación de reportes para poblar cada
+    /// `ReportEntry::reference` a partir del `member_index` (IEC 61850-8-1),
+    /// en vez del best-effort por OptFlds.
+    report_members: std::sync::Mutex<HashMap<String, DatasetMembers>>,
 }
 
 /// Cliente MMS conectado y asociado a un servidor.
@@ -176,6 +184,7 @@ impl MmsClient {
         let shared = Arc::new(Shared {
             pending: Mutex::new(HashMap::new()),
             last_appl_error: std::sync::Mutex::new(None),
+            report_members: std::sync::Mutex::new(HashMap::new()),
         });
         let (report_tx, report_rx) = mpsc::channel(256);
         let (term_tx, _) = broadcast::channel(64);
@@ -650,6 +659,11 @@ impl MmsClient {
     // --- Reporting ---
 
     /// Configura y habilita un RCB (URCB o BRCB según la FC de `rcb`).
+    /// Además **resuelve el dataset** del RCB (GetNamedVariableListAttributes)
+    /// y registra sus miembros para que los reportes entrantes lleguen con
+    /// `ReportEntry::reference` poblada por `member_index` (decodificación
+    /// guiada por el dataset, no solo best-effort por OptFlds). Si el servidor
+    /// no soporta el servicio, el reporte se decodifica igual (sin referencias).
     pub async fn enable_report(
         &self,
         rcb: &ObjectReference,
@@ -658,6 +672,17 @@ impl MmsClient {
         if let Some(ds) = &cfg.dataset {
             self.write_rcb_attr(rcb, "DatSet", MmsData::Visible(ds.clone()))
                 .await?;
+        }
+        // Dataset efectivo: el pedido o el ya configurado en el RCB.
+        let dataset = match &cfg.dataset {
+            Some(ds) => Some(ds.clone()),
+            None => match self.read_rcb_attr(rcb, "DatSet").await {
+                Ok(MmsData::Visible(s)) if !s.is_empty() => Some(s),
+                _ => None,
+            },
+        };
+        if let Some(ds) = dataset {
+            let _ = self.resolve_report_dataset(&ds).await;
         }
         if let Some(t) = &cfg.trg_ops {
             self.write_rcb_attr(rcb, "TrgOps", MmsData::BitString(t.clone()))
@@ -704,6 +729,34 @@ impl MmsClient {
         obj.path.push(attr.to_string());
         let (domain, item) = object_reference_to_mms(&obj)?;
         self.write_raw(&domain, &item, &value).await?.into_result()
+    }
+
+    async fn read_rcb_attr(&self, rcb: &ObjectReference, attr: &str) -> Result<MmsData, MmsError> {
+        let mut obj = rcb.clone();
+        obj.path.push(attr.to_string());
+        let (domain, item) = object_reference_to_mms(&obj)?;
+        match self.read_raw(&domain, &item).await? {
+            AccessResult::Success(v) => Ok(v),
+            AccessResult::Failure(e) => Err(MmsError::DataAccess(e)),
+        }
+    }
+
+    /// Resuelve los miembros de un dataset (`"IED1LD0/LLN0$ds1"`) con
+    /// GetNamedVariableListAttributes y los registra para la decodificación
+    /// guiada de reportes. Idempotente; puede llamarse explícitamente para
+    /// datasets de RCB habilitados por otro cliente.
+    pub async fn resolve_report_dataset(&self, dataset: &str) -> Result<usize, MmsError> {
+        let (domain, name) = dataset
+            .split_once('/')
+            .ok_or_else(|| MmsError::ServiceReject(format!("dataset sin dominio: {dataset}")))?;
+        let attrs = self.get_data_set_directory(domain, name).await?;
+        let n = attrs.members.len();
+        self.shared
+            .report_members
+            .lock()
+            .unwrap()
+            .insert(dataset.to_string(), Arc::new(attrs.members));
+        Ok(n)
     }
 
     async fn get_name_list_all(
@@ -778,7 +831,24 @@ async fn reader_loop(
                                     }
                                 }
                                 let _ = term_tx.send(ct);
-                            } else if let Ok(report) = report::decode_information_report(&svc) {
+                            } else if let Ok(mut report) = report::decode_information_report(&svc) {
+                                // Decodificación guiada por el dataset resuelto:
+                                // poblar la referencia de cada entrada por su
+                                // member_index (si el dataset está registrado).
+                                if let Some(ds) = &report.dataset {
+                                    let members =
+                                        shared.report_members.lock().unwrap().get(ds).cloned();
+                                    if let Some(members) = members {
+                                        for e in &mut report.entries {
+                                            if e.reference.is_none() {
+                                                if let Some((d, i)) = members.get(e.member_index) {
+                                                    e.reference =
+                                                        mms_to_object_reference(d, i).ok();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 let _ = report_tx.send(report).await;
                             }
                         }

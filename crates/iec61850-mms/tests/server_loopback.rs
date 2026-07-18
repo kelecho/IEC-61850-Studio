@@ -1208,3 +1208,173 @@ async fn association_rejects_cp_without_usable_contexts() {
         .unwrap_or(0);
     assert_eq!(n, 0, "se esperaba cierre de conexión sin AARE");
 }
+
+// --- Reporting completo: overflow, reservas y decodificación guiada ---------
+
+/// Desbordar el buffer del BRCB (capacidad 64) antes de habilitar: el primer
+/// reporte drenado debe señalizar `BufOvfl=true` y conservar las ÚLTIMAS 64
+/// entradas (las más antiguas se descartan).
+#[tokio::test]
+async fn buffered_overflow_signaled() {
+    let (addr, handle) = start_server(100).await;
+    let mut client = MmsClient::connect(addr).await.unwrap();
+    let mut reports = client.take_report_rx().unwrap();
+
+    let member = "IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]".parse().unwrap();
+    // 70 eventos sin cliente: 64 de capacidad ⇒ 6 descartados, overflow.
+    for i in 0..70 {
+        handle
+            .set_value(&member, MmsData::Float(i as f64))
+            .await
+            .unwrap();
+    }
+
+    let brcb = "IED1LD0/LLN0.brcb1[BR]".parse().unwrap();
+    client
+        .enable_report(&brcb, &Default::default())
+        .await
+        .unwrap();
+    // Resync desde el principio (EntryID=0): pide todo lo bufferado.
+    let entry_id_ref = "IED1LD0/LLN0.brcb1.EntryID[BR]".parse().unwrap();
+    client
+        .write(&entry_id_ref, MmsData::Octets(0u64.to_be_bytes().to_vec()))
+        .await
+        .unwrap();
+
+    // Primer reporte del replay: EntryID 7 (1..=6 descartados) y BufOvfl.
+    let first = reports.recv().await.expect("primer reporte drenado");
+    assert_eq!(
+        first.buffer_overflow,
+        Some(true),
+        "el desbordamiento debe señalizarse: {first:?}"
+    );
+    assert_eq!(
+        entry_id_of(&first),
+        7,
+        "las 6 entradas más viejas se descartan"
+    );
+    // El resto llega sin overflow y termina en el EntryID 70.
+    let mut last = entry_id_of(&first);
+    for _ in 0..63 {
+        let r = reports.recv().await.expect("resto del drenado");
+        last = entry_id_of(&r);
+    }
+    assert_eq!(last, 70);
+}
+
+/// Reserva de URCB con `Resv`: mientras una conexión lo tiene reservado, otra
+/// no puede escribir sus atributos ni habilitarlo; al soltarlo (Resv=false) sí.
+#[tokio::test]
+async fn urcb_reservation_excludes_other_clients() {
+    let (addr, _handle) = start_server(100).await;
+    let c1 = MmsClient::connect(addr).await.unwrap();
+    let c2 = MmsClient::connect(addr).await.unwrap();
+
+    let resv: iec61850_model::ObjectReference = "IED1LD0/LLN0.rcb1.Resv[RP]".parse().unwrap();
+    let rcb: iec61850_model::ObjectReference = "IED1LD0/LLN0.rcb1[RP]".parse().unwrap();
+
+    // c1 reserva el URCB.
+    c1.write(&resv, MmsData::Bool(true)).await.unwrap();
+
+    // c2 no puede habilitarlo ni escribir atributos.
+    let err = c2
+        .enable_report(&rcb, &Default::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MmsError::DataAccess(iec61850_mms::DataAccessError::TemporarilyUnavailable)
+        ),
+        "RCB reservado ⇒ temporarily-unavailable, fue {err:?}"
+    );
+
+    // c1 libera; ahora c2 puede habilitar.
+    c1.write(&resv, MmsData::Bool(false)).await.unwrap();
+    c2.enable_report(&rcb, &Default::default()).await.unwrap();
+}
+
+/// Habilitar un RCB toma la reserva implícita: la conexión que lo habilitó lo
+/// posee; al desconectar (sin ResvTms) la reserva se libera sola.
+#[tokio::test]
+async fn rcb_implicit_reservation_released_on_disconnect() {
+    let (addr, _handle) = start_server(100).await;
+    let rcb: iec61850_model::ObjectReference = "IED1LD0/LLN0.rcb1[RP]".parse().unwrap();
+
+    let c1 = MmsClient::connect(addr).await.unwrap();
+    c1.enable_report(&rcb, &Default::default()).await.unwrap();
+
+    // Mientras c1 vive, c2 no puede tomar el RCB.
+    let c2 = MmsClient::connect(addr).await.unwrap();
+    assert!(c2.enable_report(&rcb, &Default::default()).await.is_err());
+
+    // c1 se desconecta ⇒ la reserva implícita (sin ResvTms) se libera.
+    drop(c1);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    c2.enable_report(&rcb, &Default::default()).await.unwrap();
+}
+
+/// `ResvTms` (BRCB): la reserva sobrevive a la desconexión durante su ventana
+/// y expira después.
+#[tokio::test]
+async fn brcb_resv_tms_survives_disconnect_until_window() {
+    let (addr, _handle) = start_server(100).await;
+    let resv_tms: iec61850_model::ObjectReference =
+        "IED1LD0/LLN0.brcb1.ResvTms[BR]".parse().unwrap();
+    let brcb: iec61850_model::ObjectReference = "IED1LD0/LLN0.brcb1[BR]".parse().unwrap();
+
+    let c1 = MmsClient::connect(addr).await.unwrap();
+    c1.write(&resv_tms, MmsData::Int(1)).await.unwrap(); // 1 s de ventana
+    drop(c1);
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    // Dentro de la ventana: el BRCB sigue reservado.
+    let c2 = MmsClient::connect(addr).await.unwrap();
+    let err = c2
+        .enable_report(&brcb, &Default::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MmsError::DataAccess(iec61850_mms::DataAccessError::TemporarilyUnavailable)
+        ),
+        "dentro de ResvTms ⇒ reservado, fue {err:?}"
+    );
+
+    // Pasada la ventana: libre.
+    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    c2.enable_report(&brcb, &Default::default()).await.unwrap();
+}
+
+/// Decodificación guiada por el dataset: `enable_report` resuelve los miembros
+/// del dataset del RCB y las entradas llegan con su `reference` poblada.
+#[tokio::test]
+async fn report_entries_carry_dataset_references() {
+    let (addr, handle) = start_server(100).await;
+    let mut client = MmsClient::connect(addr).await.unwrap();
+    let mut reports = client.take_report_rx().unwrap();
+
+    let rcb = "IED1LD0/LLN0.rcb1[RP]".parse().unwrap();
+    client
+        .enable_report(&rcb, &Default::default())
+        .await
+        .unwrap();
+
+    let member: iec61850_model::ObjectReference =
+        "IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]".parse().unwrap();
+    handle
+        .set_value(&member, MmsData::Float(3.25))
+        .await
+        .unwrap();
+
+    let report = reports.recv().await.expect("reporte dchg");
+    assert_eq!(report.entries.len(), 1);
+    let entry = &report.entries[0];
+    assert_eq!(entry.value, MmsData::Float(3.25));
+    assert_eq!(
+        entry.reference.as_ref().map(ToString::to_string).as_deref(),
+        Some("IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]"),
+        "la referencia debe salir del dataset resuelto: {report:?}"
+    );
+}

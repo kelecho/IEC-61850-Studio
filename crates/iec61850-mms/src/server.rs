@@ -311,6 +311,18 @@ struct RcbDef {
 }
 
 impl RcbDef {
+    /// Referencia completa del dataset del RCB (`"IED1LD0/LLN0$ds1"`, la forma
+    /// de IEC 61850-8-1). El SCL da el nombre corto; se cualifica con el LN del
+    /// propio RCB. Si ya viene cualificado, se respeta.
+    fn dataset_ref(&self) -> Option<String> {
+        let ds = self.dataset.as_deref()?;
+        if ds.contains('/') || ds.contains('$') {
+            return Some(ds.to_string());
+        }
+        let ln = self.base.split('$').next().unwrap_or_default();
+        Some(format!("{}/{ln}${ds}", self.domain))
+    }
+
     /// Componentes del RCB en el **orden exacto de IEC 61850-8-1** (verificado
     /// contra libiec61850): `(nombreAtributo, valorPorDefecto)`. El orden importa
     /// porque un cliente que lee el RCB como estructura asigna por posición.
@@ -326,7 +338,7 @@ impl RcbDef {
         c.extend([
             (
                 "DatSet",
-                MmsData::Visible(self.dataset.clone().unwrap_or_default()),
+                MmsData::Visible(self.dataset_ref().unwrap_or_default()),
             ),
             ("ConfRev", MmsData::Uint(self.conf_rev as u64)),
             (
@@ -606,6 +618,56 @@ struct BufEntry {
 
 /// Buffers de todos los BRCB del servidor, indexados por `(domain, base)`.
 type Buffers = Arc<Mutex<HashMap<(String, String), BrcbBuffer>>>;
+
+/// Reserva de un RCB (`Resv` en URCB, `ResvTms` en BRCB): exclusividad de un
+/// cliente sobre el bloque. Mientras la conexión vive, `until = None`; al
+/// desconectar, una reserva con `resv_secs > 0` sobrevive esa ventana (permite
+/// reconectar y resincronizar el BRCB sin que otro cliente lo tome).
+struct Reservation {
+    conn_id: u64,
+    /// Segundos de reserva tras desconexión (`ResvTms`); 0 = solo en vida.
+    resv_secs: u32,
+    /// Expiración tras desconexión; `None` mientras la conexión vive.
+    until: Option<Instant>,
+}
+
+impl Reservation {
+    /// ¿Bloquea esta reserva a otra conexión en el instante `now`?
+    fn holds(&self, now: Instant) -> bool {
+        match self.until {
+            None => true,       // conexión viva
+            Some(t) => t > now, // ventana post-desconexión vigente
+        }
+    }
+}
+
+/// Reservas de RCB de todo el servidor, por `(domain, base)`.
+type Reservations = Arc<Mutex<HashMap<(String, String), Reservation>>>;
+
+/// Libera al morir la conexión: quita sus reservas sin `ResvTms` y arranca la
+/// ventana de las que lo tienen. (Drop ⇒ corre también en salidas por error.)
+struct ReservationGuard {
+    conn_id: u64,
+    reservations: Reservations,
+}
+
+impl Drop for ReservationGuard {
+    fn drop(&mut self) {
+        let now = Instant::now();
+        let mut g = self.reservations.lock().unwrap();
+        g.retain(|_, r| {
+            if r.conn_id != self.conn_id {
+                return true;
+            }
+            if r.resv_secs > 0 {
+                r.until = Some(now + Duration::from_secs(r.resv_secs as u64));
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
 /// Para cada BRCB: su clave `(domain, base)` y los miembros `(domain, item)`.
 type BrcbMembers = Vec<((String, String), Vec<(String, String)>)>;
 
@@ -696,6 +758,13 @@ impl ServerModel {
                     .iter()
                     .filter_map(|f| fcda_item(f).map(|i| (domain.clone(), i)))
                     .collect();
+                // Doble clave: nombre corto del SCL y forma MMS cualificada
+                // por LN (`LLN0$ds1`), que es como lo referencian los clientes
+                // conformes (readDataSetValues / GetNamedVariableListAttributes).
+                datasets.insert(
+                    (domain.clone(), format!("{ln_name}${}", ds.name)),
+                    members.clone(),
+                );
                 datasets.insert((domain.clone(), ds.name.clone()), members);
             }
             for rc in &ln.report_controls {
@@ -988,7 +1057,14 @@ impl ServerModel {
         }
         item.to_string()
     }
+    /// Miembros de un dataset. Tolera las tres formas de nombre con que un
+    /// cliente puede referirse a él: `"ds1"` (corto), `"LLN0$ds1"` (cualificado
+    /// por LN, la forma MMS de 8-1) y `"IED1LD0/LLN0$ds1"` (con dominio).
     fn dataset_members(&self, domain: &str, name: &str) -> Option<&[(String, String)]> {
+        let name = match name.split_once('/') {
+            Some((d, rest)) if d == domain => rest,
+            _ => name,
+        };
         self.datasets
             .get(&(domain.to_string(), name.to_string()))
             .map(Vec::as_slice)
@@ -1179,6 +1255,7 @@ pub struct MmsServer {
     change_tx: broadcast::Sender<ValueChange>,
     buffers: Buffers,
     buffer_tx: broadcast::Sender<(String, String)>,
+    reservations: Reservations,
     limits: ServerLimits,
     auth: AuthPolicy,
     #[cfg(feature = "tls")]
@@ -1205,6 +1282,7 @@ impl MmsServer {
             change_tx,
             buffers: Arc::new(Mutex::new(HashMap::new())),
             buffer_tx,
+            reservations: Arc::new(Mutex::new(HashMap::new())),
             limits: ServerLimits::default(),
             auth: AuthPolicy::None,
             #[cfg(feature = "tls")]
@@ -1289,6 +1367,7 @@ impl MmsServer {
         let conn_limit = Arc::new(tokio::sync::Semaphore::new(self.limits.max_connections));
         let limits = self.limits;
         let auth = Arc::new(self.auth);
+        let next_conn_id = Arc::new(std::sync::atomic::AtomicU64::new(1));
         loop {
             let (sock, _) = self.listener.accept().await?;
             // Espera un hueco antes de gastar recursos en el handshake.
@@ -1301,6 +1380,8 @@ impl MmsServer {
             let change_tx = self.change_tx.clone();
             let buffers = self.buffers.clone();
             let buffer_rx = self.buffer_tx.subscribe();
+            let reservations = self.reservations.clone();
+            let conn_id = next_conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let auth = auth.clone();
             #[cfg(feature = "tls")]
             let acceptor = self.acceptor.clone();
@@ -1330,12 +1411,31 @@ impl MmsServer {
 
                 #[cfg(feature = "tls")]
                 let _ = handle_connection(
-                    conn, model, store, change_tx, buffers, buffer_rx, limits, auth, revocation,
+                    conn,
+                    model,
+                    store,
+                    change_tx,
+                    buffers,
+                    buffer_rx,
+                    reservations,
+                    conn_id,
+                    limits,
+                    auth,
+                    revocation,
                 )
                 .await;
                 #[cfg(not(feature = "tls"))]
                 let _ = handle_connection(
-                    conn, model, store, change_tx, buffers, buffer_rx, limits, auth,
+                    conn,
+                    model,
+                    store,
+                    change_tx,
+                    buffers,
+                    buffer_rx,
+                    reservations,
+                    conn_id,
+                    limits,
+                    auth,
                 )
                 .await;
             });
@@ -1452,6 +1552,10 @@ struct ConnState {
     dynamic_datasets: HashMap<(String, String), Vec<(String, String)>>,
     /// Rol RBAC de esta conexión (IEC 62351-8), fijado tras la autenticación.
     role: Role,
+    /// Identificador de esta conexión (para las reservas de RCB).
+    conn_id: u64,
+    /// Reservas de RCB compartidas del servidor (Resv/ResvTms).
+    reservations: Reservations,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1462,6 +1566,8 @@ async fn handle_connection(
     change_tx: broadcast::Sender<ValueChange>,
     buffers: Buffers,
     mut buffer_rx: broadcast::Receiver<(String, String)>,
+    reservations: Reservations,
+    conn_id: u64,
     limits: ServerLimits,
     auth: Arc<AuthPolicy>,
     #[cfg(feature = "tls")] revocation: Option<Arc<crate::transport::tls::RevocationSource>>,
@@ -1570,8 +1676,16 @@ async fn handle_connection(
     // Separar para poder leer peticiones y empujar reportes a la vez.
     let (mut reader, mut writer) = conn.split();
     let mut change_rx = change_tx.subscribe();
+    // Al morir la conexión (incluidas salidas por error) se liberan sus
+    // reservas de RCB; las que tienen ResvTms arrancan su ventana.
+    let _resv_guard = ReservationGuard {
+        conn_id,
+        reservations: reservations.clone(),
+    };
     let mut state = ConnState {
         role,
+        conn_id,
+        reservations,
         ..ConnState::default()
     };
     // Reportes perdidos acumulados por un cliente que no drena a tiempo.
@@ -1989,6 +2103,14 @@ impl ConnState {
                 continue;
             }
 
+            // Reserva de RCB (Resv/ResvTms, IEC 61850-7-2): un RCB reservado
+            // por OTRA conexión (viva, o dentro de su ventana ResvTms tras
+            // desconectar) no admite escrituras de esta.
+            if let Some(denied) = self.check_rcb_reservation(domain, item, &value, model) {
+                results.push(denied);
+                continue;
+            }
+
             let result = if let Some(base) = item.strip_suffix("$RptEna") {
                 let r = self
                     .set_rpt_ena(domain, base, &value, model, store, change_tx, buffers)
@@ -2076,6 +2198,88 @@ impl ConnState {
         }
     }
 
+    /// Aplica la semántica de reserva de RCB a una escritura entrante.
+    /// Devuelve `Some(Failure)` si el RCB está reservado por otra conexión;
+    /// `None` si la escritura puede continuar (y registra/libera la reserva
+    /// cuando el atributo es `Resv`, `ResvTms` o `RptEna=true`).
+    fn check_rcb_reservation(
+        &mut self,
+        domain: &str,
+        item: &str,
+        value: &MmsData,
+        model: &ServerModel,
+    ) -> Option<WriteResult> {
+        let (base, attr) = item.rsplit_once('$')?;
+        model.rcb_def(domain, base)?;
+        let key = (domain.to_string(), base.to_string());
+        let now = Instant::now();
+        let mut g = self.reservations.lock().unwrap();
+
+        if let Some(r) = g.get(&key) {
+            if r.conn_id != self.conn_id && r.holds(now) {
+                return Some(WriteResult::Failure(
+                    DataAccessError::TemporarilyUnavailable,
+                ));
+            }
+        }
+        // Libre, mía, o expirada de otro: la escritura procede. Actualiza la
+        // reserva según el atributo.
+        match attr {
+            "Resv" => {
+                if matches!(value, MmsData::Bool(true)) {
+                    g.insert(
+                        key,
+                        Reservation {
+                            conn_id: self.conn_id,
+                            resv_secs: 0,
+                            until: None,
+                        },
+                    );
+                } else {
+                    g.remove(&key);
+                }
+            }
+            "ResvTms" => {
+                let secs = match value {
+                    MmsData::Int(n) => (*n).max(0) as u32,
+                    MmsData::Uint(n) => *n as u32,
+                    _ => 0,
+                };
+                if secs > 0 {
+                    g.insert(
+                        key,
+                        Reservation {
+                            conn_id: self.conn_id,
+                            resv_secs: secs,
+                            until: None,
+                        },
+                    );
+                } else {
+                    g.remove(&key);
+                }
+            }
+            "RptEna" if matches!(value, MmsData::Bool(true)) => {
+                // Habilitar toma reserva implícita si el RCB estaba libre
+                // (conserva una reserva mía previa, p. ej. con ResvTms).
+                match g.get(&key) {
+                    Some(r) if r.conn_id == self.conn_id => {}
+                    _ => {
+                        g.insert(
+                            key,
+                            Reservation {
+                                conn_id: self.conn_id,
+                                resv_secs: 0,
+                                until: None,
+                            },
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
     /// Habilita/deshabilita un RCB al escribir `RptEna`.
     #[allow(clippy::too_many_arguments)]
     async fn set_rpt_ena(
@@ -2111,9 +2315,12 @@ impl ConnState {
 
         let guard = store.read().await;
         let get = |attr: &str| guard.get(&(domain.to_string(), format!("{base}${attr}")));
+        // El nombre que viaja en los reportes (variableListName) es la forma
+        // completa de 8-1 (`"IED1LD0/LLN0$ds1"`); dataset_members() tolera
+        // cualquiera de las formas al resolver los miembros.
         let dataset_name = match get("DatSet") {
             Some(MmsData::Visible(s)) if !s.is_empty() => Some(s.clone()),
-            _ => rcbdef.dataset.clone(),
+            _ => rcbdef.dataset_ref(),
         };
         let opt_flds = match get("OptFlds") {
             Some(MmsData::BitString(b)) => b.clone(),
