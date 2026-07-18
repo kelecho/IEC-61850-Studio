@@ -60,6 +60,9 @@ struct SimHandle {
 struct LiveSim {
     /// Ruta del SCL servido (para mostrarla en la UI).
     scl: String,
+    /// Directorio temporal expuesto por file transfer (contiene copia del SCL);
+    /// se borra al detener el IED.
+    files: std::path::PathBuf,
     serve: JoinHandle<()>,
     vary: JoinHandle<()>,
 }
@@ -962,7 +965,22 @@ async fn sim_live_start(
     }
     let model =
         iec61850::scl::load_model(&scl_path).map_err(|e| format!("cargar {scl_path}: {e}"))?;
-    let sm = ServerModel::from_model(&model, sim_ident());
+    // Expone el propio SCL por file transfer: cualquier cliente conectado puede
+    // descargar el CID exacto que sirve este IED (pestaña «Ficheros»). Se copia
+    // a un directorio temporal propio para no exponer el directorio del usuario.
+    let file_root = std::env::temp_dir().join(format!(
+        "iec61850-live-{}",
+        bind.replace([':', '/', '\\'], "_")
+    ));
+    std::fs::create_dir_all(&file_root)
+        .map_err(|e| format!("crear {}: {e}", file_root.display()))?;
+    let scl_name = std::path::Path::new(&scl_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "ied.cid".into());
+    std::fs::copy(&scl_path, file_root.join(&scl_name))
+        .map_err(|e| format!("copiar el SCL a {}: {e}", file_root.display()))?;
+    let sm = ServerModel::from_model(&model, sim_ident()).with_file_root(file_root.clone());
     let store = sm.init_store(&model);
     let server = MmsServer::bind(&bind, Arc::new(sm), store)
         .await
@@ -995,6 +1013,7 @@ async fn sim_live_start(
         addr.clone(),
         LiveSim {
             scl: scl_path,
+            files: file_root,
             serve,
             vary,
         },
@@ -1024,6 +1043,7 @@ async fn sim_live_stop(state: State<'_, AppState>, addr: String) -> Result<(), S
         Some(s) => {
             s.serve.abort();
             s.vary.abort();
+            let _ = std::fs::remove_dir_all(&s.files);
             Ok(())
         }
         None => Err(format!("no hay IED en vivo en {addr}")),
