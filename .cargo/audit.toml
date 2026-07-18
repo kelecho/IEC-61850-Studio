@@ -1,0 +1,13 @@
+# Configuración de cargo-audit (job "cargo-audit" del workflow Supply chain).
+# Mantener sincronizado con [advisories].ignore de deny.toml.
+
+[advisories]
+ignore = [
+  # quick-xml 0.39 transitivo vía wayland-scanner (proc-macro del stack GUI,
+  # eframe/winit): parsea los XML de protocolo Wayland embebidos en el propio
+  # crate durante la compilación, nunca entrada no confiable. Upstream aún
+  # requiere ^0.39; nuestros crates usan ≥0.41 (parcheado). Revisar al
+  # actualizar eframe/winit.
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
+]

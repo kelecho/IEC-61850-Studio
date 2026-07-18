@@ -13,11 +13,14 @@ yanked = "deny"
 # que Tauri migre (se revisa en cada actualización de Tauri).
 unmaintained = "workspace"
 ignore = [
-  # quick-xml 0.39 transitivo vía plist→tauri-utils: parsea config propia de
-  # Tauri en build, no entrada no confiable. Nuestros crates usan ≥0.41
-  # (parcheado). Revisar al actualizar Tauri.
-  { id = "RUSTSEC-2026-0194", reason = "solo alcanzable vía plist/tauri-utils con entrada confiable" },
-  { id = "RUSTSEC-2026-0195", reason = "solo alcanzable vía plist/tauri-utils con entrada confiable" },
+  # quick-xml 0.39 transitivo vía wayland-scanner (proc-macro del stack GUI,
+  # eframe/winit): parsea los XML de protocolo Wayland embebidos en el propio
+  # crate durante la compilación, nunca entrada no confiable. Upstream aún
+  # requiere ^0.39; nuestros crates usan ≥0.41 (parcheado). Revisar al
+  # actualizar eframe/winit. (La otra ruta, plist→tauri-utils, se eliminó
+  # con plist 1.10.)
+  { id = "RUSTSEC-2026-0194", reason = "solo alcanzable en build vía wayland-scanner con XML embebido confiable" },
+  { id = "RUSTSEC-2026-0195", reason = "solo alcanzable en build vía wayland-scanner con XML embebido confiable" },
 ]
 
 [licenses]
