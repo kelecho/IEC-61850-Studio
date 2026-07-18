@@ -40,6 +40,12 @@ const SIM_TLS_ADDR: &str = "127.0.0.1:10103";
 const TLS_CA: &[u8] = include_bytes!("../../test-certs/ca.crt.pem");
 const TLS_SERVER_CRT: &[u8] = include_bytes!("../../test-certs/server.crt.pem");
 const TLS_SERVER_KEY: &[u8] = include_bytes!("../../test-certs/server.key.pem");
+/// Certificado/clave de CLIENTE de prueba embebidos: permiten el demo mTLS
+/// (`connect_tls_demo`) 100 % autocontenido, sin rutas a ficheros en disco.
+const TLS_CLIENT_CRT: &[u8] = include_bytes!("../../test-certs/client.crt.pem");
+const TLS_CLIENT_KEY: &[u8] = include_bytes!("../../test-certs/client.key.pem");
+/// Server name del certificado del simulador TLS embebido.
+const SIM_TLS_SERVER_NAME: &str = "iec61850-sim";
 
 /// Mensaje de los stubs sin backend de capa 2. GOOSE/SV/PCAP usan AF_PACKET
 /// (Linux) o Npcap (Windows); en otros SO (p. ej. macOS) no hay backend. El
@@ -256,6 +262,41 @@ async fn connect_tls(
         .connector()
         .map_err(|e| e.to_string())?;
     let mut c = MmsClient::connect_tls(&addr, &server_name, connector)
+        .await
+        .map_err(|e| e.to_string())?;
+    let neg = format!("asociado TLS (MMS v{})", c.negotiated().version);
+    let id = addr.clone();
+    if let Some(mut rx) = c.take_report_rx() {
+        let app = app.clone();
+        let source = id.clone();
+        tokio::spawn(async move {
+            while let Some(r) = rx.recv().await {
+                let _ = app.emit("report", ReportPayload::from(&r, &source));
+            }
+        });
+    }
+    state.clients.lock().await.insert(
+        id.clone(),
+        Conn {
+            client: Arc::new(c),
+            tls: true,
+        },
+    );
+    *state.active.lock().await = Some(id);
+    Ok(neg)
+}
+
+/// Conecta por **TLS/mTLS al simulador embebido** usando los certificados de
+/// prueba embebidos (CA + cliente): demo 100 % autocontenido, sin pedir rutas
+/// a ficheros. Arranca el simulador TLS si no estaba en marcha.
+#[tauri::command]
+async fn connect_tls_demo(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let addr = sim_start_tls(state.clone()).await?;
+    let connector = TlsClientOptions::from_pem(TLS_CA, TLS_CLIENT_CRT, TLS_CLIENT_KEY)
+        .map_err(|e| e.to_string())?
+        .connector()
+        .map_err(|e| e.to_string())?;
+    let mut c = MmsClient::connect_tls(&addr, SIM_TLS_SERVER_NAME, connector)
         .await
         .map_err(|e| e.to_string())?;
     let neg = format!("asociado TLS (MMS v{})", c.negotiated().version);
@@ -1608,6 +1649,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connect,
             connect_tls,
+            connect_tls_demo,
             disconnect,
             disconnect_id,
             connections,

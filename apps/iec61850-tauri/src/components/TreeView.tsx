@@ -271,8 +271,10 @@ export function TreeView({ data, selected, values, forceOpen, maxDepth, onSelect
 
   if (data.length === 0) {
     return (
-      <Text c="dimmed" size="sm">
-        (sin coincidencias)
+      <Text c="dimmed" size="sm" p="xs">
+        {forceOpen
+          ? "Sin coincidencias para la búsqueda."
+          : "Sin modelo todavía. Conéctate a un IED o abre un archivo SCL."}
       </Text>
     );
   }

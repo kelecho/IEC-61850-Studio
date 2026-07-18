@@ -406,13 +406,13 @@ export default function App() {
   const [l2Results, setL2Results] = useState<PubInfo[]>([]);
   const [simAddr, setSimAddr] = useState<string | null>(null);
 
-  // TLS / mTLS (IEC 62351-3).
-  const CERT_DIR = "/home/kelecho/apps/iec_61850/apps/iec61850-tauri/test-certs";
+  // TLS / mTLS (IEC 62351-3). Campos vacíos: el operador elige sus PEM con el
+  // diálogo nativo. El demo autocontenido no usa estas rutas.
   const [tlsOn, setTlsOn] = useState(false);
-  const [tlsServerName, setTlsServerName] = useState("iec61850-sim");
-  const [tlsCa, setTlsCa] = useState(`${CERT_DIR}/ca.crt.pem`);
-  const [tlsCert, setTlsCert] = useState(`${CERT_DIR}/client.crt.pem`);
-  const [tlsKey, setTlsKey] = useState(`${CERT_DIR}/client.key.pem`);
+  const [tlsServerName, setTlsServerName] = useState("");
+  const [tlsCa, setTlsCa] = useState("");
+  const [tlsCert, setTlsCert] = useState("");
+  const [tlsKey, setTlsKey] = useState("");
 
   const [domains, setDomains] = useState<DomainItems[]>([]);
   const [query, setQuery] = useState("");
@@ -424,8 +424,8 @@ export default function App() {
     name: string;
     members: Array<{ index: number; reference: string; fc: string; ty: string | null }>;
   } | null>(null);
-  const [treeSource, setTreeSource] = useState<"online" | "scl">("scl");
-  const [sclPath, setSclPath] = useState("/home/kelecho/apps/iec_61850/fixtures/icd/simple.icd");
+  const [treeSource, setTreeSource] = useState<"online" | "scl">("online");
+  const [sclPath, setSclPath] = useState("");
   const [sclTree, setSclTree] = useState<TreeNode[]>([]);
   const [reportMembers, setReportMembers] = useState<string[]>([]);
   const [selRef, setSelRef] = useState<string | null>(null);
@@ -438,7 +438,7 @@ export default function App() {
   const pollRefs = useRef<string[]>([]);
   const [watch, setWatch] = useState<string[]>([]);
 
-  const [rcb, setRcb] = useState("IED1LD0/LLN0.rcb1[RP]");
+  const [rcb, setRcb] = useState("");
   const [reports, setReports] = useState<ReportRow[]>([]);
   const reportSeq = useRef(0);
   const [rcbForm, setRcbForm] = useState<RcbForm>({
@@ -948,12 +948,16 @@ export default function App() {
       fail(e);
     }
   }
-  async function startSimTls() {
+  // Demo mTLS 100% autocontenido: arranca el sim TLS embebido y se conecta con
+  // los certificados de prueba embebidos, sin pedir rutas a ficheros.
+  async function doConnectTlsDemo() {
     try {
-      const a = await invoke<string>("sim_start_tls");
-      setAddr(a);
+      const neg = await invoke<string>("connect_tls_demo");
       setTlsOn(true);
-      ok(`simulador TLS en ${a}`);
+      setStatus(neg);
+      await refreshConns();
+      await switchView();
+      ok("conectado al simulador (TLS demo)");
     } catch (e) {
       fail(e);
     }
@@ -1090,6 +1094,19 @@ export default function App() {
       setSimAddr(a);
       if (!connected) setAddr(a.replace(/^0\.0\.0\.0/, "127.0.0.1"));
       ok(`simulador IED en ${a}`);
+    } catch (e) {
+      fail(e);
+    }
+  }
+  // Onboarding: arranca el simulador integrado y se conecta de una vez.
+  async function startSimAndConnect() {
+    try {
+      const a = await invoke<string>("sim_start", { sclPath: null, bind: null });
+      setSimAddr(a);
+      const target = a.replace(/^0\.0\.0\.0/, "127.0.0.1");
+      setAddr(target);
+      await connectTo(target);
+      ok(`conectado al simulador (${target})`);
     } catch (e) {
       fail(e);
     }
@@ -1444,11 +1461,12 @@ export default function App() {
                     </ActionIcon>
                   }
                 />
-                <Button size="xs" variant="light" color="grape" disabled={connected} onClick={startSimTls}>
-                  Iniciar sim TLS (demo)
+                <Button size="xs" variant="light" color="grape" onClick={doConnectTlsDemo}>
+                  Probar TLS con el simulador
                 </Button>
                 <Text size="xs" c="dimmed">
-                  Demo: arranca el IED TLS embebido y rellena la dirección; activa «Usar TLS» y pulsa «Conectar TLS».
+                  Demo autocontenido: arranca el IED TLS embebido y se conecta con certificados de
+                  prueba, sin configurar nada. Para un IED real, rellena arriba tus PEM y usa «Conectar TLS».
                 </Text>
               </Stack>
             </Popover.Dropdown>
@@ -1939,9 +1957,31 @@ export default function App() {
                     </Text>
                   </Group>
                 </>
+              ) : !connected && sclTree.length === 0 ? (
+                <Paper withBorder p="lg" radius="md">
+                  <Stack gap="sm" align="center">
+                    <IconNetwork size={34} color="var(--mantine-color-brand-6)" />
+                    <Text fw={600}>Empieza por conectar o cargar un modelo</Text>
+                    <Text size="sm" c="dimmed" ta="center" maw={460}>
+                      Conéctate a un IED de la red, ábrelo desde un archivo SCL, o prueba sin
+                      hardware con el simulador integrado.
+                    </Text>
+                    <Group>
+                      <Button size="xs" leftSection={<IconScan size={14} />} onClick={() => setScanOpen(true)}>
+                        Buscar IEDs
+                      </Button>
+                      <Button size="xs" variant="light" leftSection={<IconFileImport size={14} />} onClick={openSclDialog}>
+                        Abrir SCL
+                      </Button>
+                      <Button size="xs" variant="light" color="grape" leftSection={<IconFlask2 size={14} />} onClick={startSimAndConnect}>
+                        Probar con simulador
+                      </Button>
+                    </Group>
+                  </Stack>
+                </Paper>
               ) : (
                 <Text c="dimmed" size="sm">
-                  Selecciona un objeto de dato (DO) en el árbol, o un dataset / RCB en las otras categorías.
+                  Selecciona un objeto de dato en el árbol de la izquierda para leer sus atributos.
                 </Text>
               )}
               <Group justify="space-between">
