@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use iec61850_model::{BasicType, FunctionalConstraint, Model, ObjectReference, Value};
+use iec61850_model::{BasicType, Model, ObjectReference, Value};
 use tokio::net::{TcpListener, ToSocketAddrs};
 use tokio::sync::{RwLock, broadcast};
 use tokio::time::{Instant, sleep_until};
@@ -762,11 +762,18 @@ impl ServerModel {
                 sgcbs.push(def);
             }
             for ds in &ln.data_sets {
-                let members: Vec<(String, String)> = ds
-                    .entries
-                    .iter()
-                    .filter_map(|f| fcda_item(f).map(|i| (domain.clone(), i)))
-                    .collect();
+                // Resolución vía el modelo: honra el `ldInst` de cada FCDA
+                // (miembros en OTRO dominio del mismo IED, habitual en CID
+                // reales donde el dataset vive en LD0 y los datos en MON/CTRL).
+                let members: Vec<(String, String)> = model
+                    .resolve_dataset(&domain, &ds.name)
+                    .map(|resolved| {
+                        resolved
+                            .iter()
+                            .filter_map(|m| object_reference_to_mms(&m.reference).ok())
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 // Doble clave: nombre corto del SCL y forma MMS cualificada
                 // por LN (`LLN0$ds1`), que es como lo referencian los clientes
                 // conformes (readDataSetValues / GetNamedVariableListAttributes).
@@ -1147,20 +1154,6 @@ impl ServerModel {
 }
 
 /// Construye el itemId de un FCDA (`LN$FC$DO$...$DA`).
-fn fcda_item(f: &iec61850_model::Fcda) -> Option<String> {
-    let fc: FunctionalConstraint = f.fc?;
-    let ln = format!("{}{}{}", f.prefix, f.ln_class, f.ln_inst);
-    let mut item = format!("{ln}${}", fc.as_str());
-    for seg in f.do_name.split('.') {
-        item.push('$');
-        item.push_str(seg);
-    }
-    if !f.da_name.is_empty() {
-        item.push('$');
-        item.push_str(&f.da_name);
-    }
-    Some(item)
-}
 
 fn value_to_mms(da: &iec61850_model::DataAttribute, v: &Value) -> Option<MmsData> {
     use BasicType::*;
@@ -1369,6 +1362,8 @@ impl MmsServer {
                 self.buffers.clone(),
                 self.buffer_tx.clone(),
                 brcbs,
+                self.model.clone(),
+                self.store.clone(),
             ));
         }
         // Semáforo global: acota las conexiones simultáneas. Un permiso viaja
@@ -1460,14 +1455,26 @@ async fn buffering_task(
     buffers: Buffers,
     buffer_tx: broadcast::Sender<(String, String)>,
     brcbs: BrcbMembers,
+    model: Arc<ServerModel>,
+    store: Store,
 ) {
     loop {
         match change_rx.recv().await {
             Ok(change) => {
-                let member = (change.domain.clone(), change.item.clone());
                 for (key, members) in &brcbs {
-                    let Some(idx) = members.iter().position(|m| *m == member) else {
+                    let Some(idx) = member_covering(members, &change.domain, &change.item)
+                    else {
                         continue;
+                    };
+                    let member = &members[idx];
+                    let value = if member.1 == change.item {
+                        change.value.clone()
+                    } else {
+                        // Miembro a nivel DO: bufferiza el DO completo.
+                        let guard = store.read().await;
+                        model
+                            .assemble_structured(&member.0, &member.1, &guard)
+                            .unwrap_or_else(|| change.value.clone())
                     };
                     {
                         let mut guard = buffers.lock().unwrap();
@@ -1477,7 +1484,7 @@ async fn buffering_task(
                         buf.entries.push_back(BufEntry {
                             entry_id,
                             member_idx: idx,
-                            value: change.value.clone(),
+                            value,
                         });
                         while buf.entries.len() > buf.capacity {
                             buf.entries.pop_front();
@@ -1773,7 +1780,7 @@ async fn handle_connection(
             ch = change_rx.recv() => {
                 match ch {
                     Ok(change) => {
-                        for rep in state.on_value_change(&change) {
+                        for rep in state.on_value_change(&change, &model, &store).await {
                             send_report(&mut writer, mms_ctx, &rep).await?;
                         }
                     }
@@ -1808,7 +1815,7 @@ async fn handle_connection(
             }
 
             _ = async { match next_int { Some(t) => sleep_until(t).await, None => std::future::pending().await } } => {
-                for rep in state.on_integrity(&store).await {
+                for rep in state.on_integrity(&model, &store).await {
                     send_report(&mut writer, mms_ctx, &rep).await?;
                 }
             }
@@ -2297,7 +2304,7 @@ impl ConnState {
                 r
             } else if let Some(base) = item.strip_suffix("$GI") {
                 if let Some(rep) = self
-                    .general_interrogation(domain, base, &value, store)
+                    .general_interrogation(domain, base, &value, model, store)
                     .await
                 {
                     reports.push(rep);
@@ -2644,6 +2651,7 @@ impl ConnState {
         domain: &str,
         base: &str,
         value: &MmsData,
+        model: &ServerModel,
         store: &Store,
     ) -> Option<Vec<u8>> {
         if !matches!(value, MmsData::Bool(true)) {
@@ -2657,7 +2665,7 @@ impl ConnState {
         let values: Vec<MmsData> = rcb
             .members
             .iter()
-            .map(|m| guard.get(m).cloned().unwrap_or(MmsData::Bool(false)))
+            .map(|m| member_value(model, &guard, m))
             .collect();
         drop(guard);
         rcb.seq_num += 1;
@@ -2782,31 +2790,42 @@ impl ConnState {
     }
 
     /// Reportes a emitir ante un cambio de valor (disparo por dchg).
-    fn on_value_change(&mut self, change: &ValueChange) -> Vec<Vec<u8>> {
-        let member = (change.domain.clone(), change.item.clone());
+    async fn on_value_change(
+        &mut self,
+        change: &ValueChange,
+        model: &ServerModel,
+        store: &Store,
+    ) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         for rcb in self.rcbs.values_mut() {
             if !rcb.enabled || rcb.buffered {
                 continue; // los BRCB se sirven por el buffer
             }
-            if let Some(idx) = rcb.members.iter().position(|m| *m == member) {
-                if rcb.last_values.get(&member) != Some(&change.value) {
-                    rcb.last_values.insert(member.clone(), change.value.clone());
-                    rcb.seq_num += 1;
-                    let inclusion = single_included(rcb.members.len(), idx);
-                    out.push(make_report(
-                        rcb,
-                        &inclusion,
-                        std::slice::from_ref(&change.value),
-                    ));
-                }
+            let Some(idx) = member_covering(&rcb.members, &change.domain, &change.item) else {
+                continue;
+            };
+            let member = rcb.members[idx].clone();
+            let value = if member.1 == change.item {
+                change.value.clone()
+            } else {
+                // Miembro a nivel DO (FCDA sin daName): reporta el DO completo.
+                let guard = store.read().await;
+                model
+                    .assemble_structured(&member.0, &member.1, &guard)
+                    .unwrap_or_else(|| change.value.clone())
+            };
+            if rcb.last_values.get(&member) != Some(&value) {
+                rcb.last_values.insert(member, value.clone());
+                rcb.seq_num += 1;
+                let inclusion = single_included(rcb.members.len(), idx);
+                out.push(make_report(rcb, &inclusion, std::slice::from_ref(&value)));
             }
         }
         out
     }
 
     /// Reportes de integridad periódica vencidos.
-    async fn on_integrity(&mut self, store: &Store) -> Vec<Vec<u8>> {
+    async fn on_integrity(&mut self, model: &ServerModel, store: &Store) -> Vec<Vec<u8>> {
         let now = Instant::now();
         let mut out = Vec::new();
         let guard = store.read().await;
@@ -2820,7 +2839,7 @@ impl ConnState {
             let values: Vec<MmsData> = rcb
                 .members
                 .iter()
-                .map(|m| guard.get(m).cloned().unwrap_or(MmsData::Bool(false)))
+                .map(|m| member_value(model, &guard, m))
                 .collect();
             rcb.seq_num += 1;
             out.push(make_report(rcb, &all_included(rcb.members.len()), &values));
@@ -2828,6 +2847,32 @@ impl ConnState {
         }
         out
     }
+}
+
+/// Índice del miembro del dataset que **cubre** un item cambiado: coincidencia
+/// exacta (miembro hoja) o por prefijo con separador `$` (miembro a nivel DO,
+/// FCDA sin `daName` — el cambio de cualquier hoja contenida dispara el miembro).
+fn member_covering(members: &[(String, String)], domain: &str, item: &str) -> Option<usize> {
+    members.iter().position(|(d, i)| {
+        d == domain
+            && (i == item
+                || item
+                    .strip_prefix(i.as_str())
+                    .is_some_and(|rest| rest.starts_with('$')))
+    })
+}
+
+/// Valor actual de un miembro de dataset: hoja directa del almacén o, para
+/// miembros a nivel DO, la estructura ensamblada recursivamente.
+fn member_value(
+    model: &ServerModel,
+    guard: &HashMap<(String, String), MmsData>,
+    member: &(String, String),
+) -> MmsData {
+    model
+        .assemble_structured(&member.0, &member.1, guard)
+        .or_else(|| guard.get(member).cloned())
+        .unwrap_or(MmsData::Bool(false))
 }
 
 /// Item CF de un atributo del DO de control: `"LN$CO$<do>" + attr` →

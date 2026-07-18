@@ -9,30 +9,96 @@ use serde::Deserialize;
 
 /// Instancia de un objeto de datos con valores configurados.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawDoi")]
 pub struct Doi {
-    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "@ix")]
     pub ix: Option<String>,
-    #[serde(rename = "@desc")]
     pub desc: Option<String>,
-    #[serde(rename = "SDI", default)]
     pub sdi: Vec<Sdi>,
-    #[serde(rename = "DAI", default)]
     pub dai: Vec<Dai>,
 }
 
 /// Instancia de sub-dato (anidable).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(from = "RawSdi")]
 pub struct Sdi {
-    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "@ix")]
     pub ix: Option<String>,
-    #[serde(rename = "SDI", default)]
     pub sdi: Vec<Sdi>,
-    #[serde(rename = "DAI", default)]
     pub dai: Vec<Dai>,
+}
+
+/// Representaciones de deserialización que toleran `DAI` y `SDI`
+/// **intercalados** (habitual en exportadores reales, p. ej. IET600 de
+/// ABB/Hitachi), que de otro modo rompen serde por "campos duplicados" al no
+/// ser consecutivos los elementos del mismo nombre.
+#[derive(Debug, Deserialize)]
+struct RawDoi {
+    #[serde(rename = "@name")]
+    name: String,
+    #[serde(rename = "@ix")]
+    ix: Option<String>,
+    #[serde(rename = "@desc")]
+    desc: Option<String>,
+    #[serde(rename = "$value", default)]
+    items: Vec<InstanceItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSdi {
+    #[serde(rename = "@name")]
+    name: String,
+    #[serde(rename = "@ix")]
+    ix: Option<String>,
+    #[serde(rename = "$value", default)]
+    items: Vec<InstanceItem>,
+}
+
+#[derive(Debug, Deserialize)]
+enum InstanceItem {
+    SDI(Box<Sdi>),
+    DAI(Box<Dai>),
+    /// Otros hijos (`Private`, extensiones de fabricante, ...) se ignoran.
+    #[serde(other)]
+    Other,
+}
+
+fn split_items(items: Vec<InstanceItem>) -> (Vec<Sdi>, Vec<Dai>) {
+    let mut sdi = Vec::new();
+    let mut dai = Vec::new();
+    for item in items {
+        match item {
+            InstanceItem::SDI(s) => sdi.push(*s),
+            InstanceItem::DAI(d) => dai.push(*d),
+            InstanceItem::Other => {}
+        }
+    }
+    (sdi, dai)
+}
+
+impl From<RawDoi> for Doi {
+    fn from(raw: RawDoi) -> Self {
+        let (sdi, dai) = split_items(raw.items);
+        Doi {
+            name: raw.name,
+            ix: raw.ix,
+            desc: raw.desc,
+            sdi,
+            dai,
+        }
+    }
+}
+
+impl From<RawSdi> for Sdi {
+    fn from(raw: RawSdi) -> Self {
+        let (sdi, dai) = split_items(raw.items);
+        Sdi {
+            name: raw.name,
+            ix: raw.ix,
+            sdi,
+            dai,
+        }
+    }
 }
 
 /// Instancia de atributo de datos con sus valores.

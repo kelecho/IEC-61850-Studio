@@ -1442,3 +1442,78 @@ async fn file_transfer_complete() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// ¿Contiene la estructura (anidada) el flotante dado?
+fn structure_contains_float(data: &MmsData, wanted: f64) -> bool {
+    match data {
+        MmsData::Float(f) => (*f - wanted).abs() < 1e-6,
+        MmsData::Structure(fields) => fields.iter().any(|f| structure_contains_float(f, wanted)),
+        _ => false,
+    }
+}
+
+#[tokio::test]
+async fn reporting_do_level_dataset_members() {
+    // ds2 tiene su único FCDA a NIVEL DO (doName="A", sin daName), como los CID
+    // reales (p. ej. IET600/ABB). El cambio de una hoja contenida debe disparar
+    // el reporte y el valor reportado debe ser el DO ensamblado, no Bool(false).
+    let (addr, handle) = start_server(100).await;
+    let mut client = MmsClient::connect(addr).await.unwrap();
+    let mut reports = client.take_report_rx().unwrap();
+
+    let rcb = "IED1LD0/LLN0.rcb2[RP]".parse().unwrap();
+    client
+        .enable_report(&rcb, &Default::default())
+        .await
+        .unwrap();
+
+    // GI: el miembro DO llega como estructura con el valor del SCL (1.5).
+    client.general_interrogation(&rcb).await.unwrap();
+    let gi = reports.recv().await.expect("reporte GI");
+    assert_eq!(gi.rpt_id, "IED1LD0/LLN0.rcb2");
+    assert_eq!(gi.entries.len(), 1);
+    assert!(
+        structure_contains_float(&gi.entries[0].value, 1.5),
+        "el GI debe traer el DO ensamblado: {:?}",
+        gi.entries[0].value
+    );
+
+    // dchg: cambiar la HOJA f dispara el miembro DO con la estructura nueva.
+    let leaf = "IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]".parse().unwrap();
+    handle.set_value(&leaf, MmsData::Float(7.25)).await.unwrap();
+    let report = reports.recv().await.expect("reporte dchg");
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].member_index, 0);
+    assert!(
+        matches!(report.entries[0].value, MmsData::Structure(_)),
+        "el valor debe ser el DO ensamblado: {:?}",
+        report.entries[0].value
+    );
+    assert!(structure_contains_float(&report.entries[0].value, 7.25));
+}
+
+#[tokio::test]
+async fn buffered_reporting_do_level_dataset_members() {
+    // Igual que el anterior pero por el camino BRCB (buffering_task).
+    let (addr, handle) = start_server(100).await;
+    let mut client = MmsClient::connect(addr).await.unwrap();
+    let mut reports = client.take_report_rx().unwrap();
+
+    let brcb = "IED1LD0/LLN0.brcb2[BR]".parse().unwrap();
+    client
+        .enable_report(&brcb, &Default::default())
+        .await
+        .unwrap();
+
+    let leaf = "IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]".parse().unwrap();
+    handle.set_value(&leaf, MmsData::Float(3.75)).await.unwrap();
+
+    let report = reports.recv().await.expect("reporte BRCB");
+    assert!(report.entry_id.is_some(), "el BRCB debe traer EntryID");
+    assert_eq!(report.entries.len(), 1);
+    assert!(
+        structure_contains_float(&report.entries[0].value, 3.75),
+        "el valor bufferizado debe ser el DO ensamblado: {:?}",
+        report.entries[0].value
+    );
+}

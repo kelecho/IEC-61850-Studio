@@ -30,10 +30,19 @@
             <DataSet name="ds1">
               <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A.phsA.cVal.mag" daName="f" fc="MX"/>
             </DataSet>
+            <DataSet name="ds2" desc="FCDA a nivel DO (sin daName), como en CID reales">
+              <FCDA ldInst="LD0" prefix="" lnClass="MMXU" lnInst="1" doName="A" fc="MX"/>
+            </DataSet>
             <ReportControl name="rcb1" rptID="IED1LD0/LLN0.rcb1" datSet="ds1" confRev="1" buffered="false">
               <TrgOps dchg="true" qchg="true"/>
             </ReportControl>
             <ReportControl name="brcb1" rptID="IED1LD0/LLN0.brcb1" datSet="ds1" confRev="1" buffered="true">
+              <TrgOps dchg="true"/>
+            </ReportControl>
+            <ReportControl name="rcb2" rptID="IED1LD0/LLN0.rcb2" datSet="ds2" confRev="1" buffered="false">
+              <TrgOps dchg="true" qchg="true"/>
+            </ReportControl>
+            <ReportControl name="brcb2" rptID="IED1LD0/LLN0.brcb2" datSet="ds2" confRev="1" buffered="true">
               <TrgOps dchg="true"/>
             </ReportControl>
             <SettingControl desc="grupos de ajuste" numOfSGs="3" actSG="1"/>

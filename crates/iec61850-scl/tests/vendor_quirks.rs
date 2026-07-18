@@ -214,3 +214,64 @@ fn namespace_prefixed_elements_are_normalized() {
     assert!(diags.iter().all(|d| d.severity != Severity::Error));
     assert!(model.ieds.contains_key("I1"));
 }
+
+#[test]
+fn xsi_type_attributes_on_address_params() {
+    // Los exportadores de ABB/Hitachi (IET600) anotan cada `<P>` con su tipo de
+    // esquema: `<P type="IP" xsi:type="tP_IP">`. quick-xml colapsa ambos
+    // atributos al nombre local `@type` y abortaba con «duplicate field».
+    let xml = base_scl(
+        r#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance""#,
+        r#"<Communication>
+    <SubNetwork name="W1" type="8-MMS">
+      <ConnectedAP iedName="I1" apName="A1">
+        <Address>
+          <P type="IP" xsi:type="tP_IP">192.168.2.10</P>
+          <P type="IP-SUBNET" xsi:type="tP_IP-SUBNET">255.255.255.0</P>
+          <P type="OSI-AP-Title" xsi:type="tP_OSI-AP-Title">1,3,9999,23</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>"#,
+        "",
+    );
+    let doc = parse_scl_str(&xml).expect("el SCL con xsi:type debe parsear");
+    let comm = doc.communication.as_ref().expect("sección Communication");
+    let ap = &comm.sub_networks[0].connected_aps[0];
+    let addr = ap.address.as_ref().expect("Address");
+    assert_eq!(addr.param("IP"), Some("192.168.2.10"));
+    assert_eq!(addr.param("IP-SUBNET"), Some("255.255.255.0"));
+    assert_parses_and_resolves(&xml);
+}
+
+#[test]
+fn interleaved_dai_and_sdi_inside_doi() {
+    // IET600 (ABB/Hitachi) intercala DAI y SDI dentro de DOI (y dentro de SDI):
+    // `<DOI><DAI/><SDI/><DAI/></DOI>`. quick-xml exige elementos del mismo
+    // nombre consecutivos y abortaba con «duplicate field `DAI`».
+    let xml = base_scl(
+        "",
+        "",
+        r#"<DOI name="Mod">
+      <DAI name="stVal"><Val>on</Val></DAI>
+      <SDI name="origin">
+        <DAI name="orCat"><Val>3</Val></DAI>
+        <SDI name="nested"><DAI name="x"><Val>1</Val></DAI></SDI>
+        <DAI name="orIdent"><Val>id</Val></DAI>
+      </SDI>
+      <DAI name="q"><Val>good</Val></DAI>
+    </DOI>"#,
+    );
+    let doc = parse_scl_str(&xml).expect("el SCL con DAI/SDI intercalados debe parsear");
+    let ied = doc.ied("I1").expect("IED I1");
+    let ln0 = ied.access_points[0].server.as_ref().unwrap().ldevices[0]
+        .ln0
+        .as_ref()
+        .expect("LN0");
+    let doi = &ln0.dois[0];
+    assert_eq!(doi.dai.len(), 2, "dos DAI directos (stVal, q)");
+    assert_eq!(doi.sdi.len(), 1, "un SDI (origin)");
+    assert_eq!(doi.sdi[0].dai.len(), 2, "orCat y orIdent");
+    assert_eq!(doi.sdi[0].sdi.len(), 1, "SDI anidado");
+    assert_parses_and_resolves(&xml);
+}

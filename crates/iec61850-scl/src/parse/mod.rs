@@ -9,11 +9,17 @@ use crate::model::SclDocument;
 ///
 /// Robustez frente a ficheros de fabricantes: si el parseo directo queda **vacío**
 /// (típico cuando el exportador **prefija** todos los elementos, p. ej.
-/// `<scl:SCL><scl:Header>…`, que quick-xml no reconoce), se reintenta tras
-/// **normalizar los prefijos de namespace**.
+/// `<scl:SCL><scl:Header>…`, que quick-xml no reconoce) o **falla** (p. ej.
+/// atributos `xsi:type` que quick-xml colapsa al nombre local `@type` y
+/// colisionan con el atributo `type` propio del SCL, como emite IET600 de
+/// ABB/Hitachi), se reintenta tras **normalizar los prefijos de namespace**.
 pub fn parse_scl_str(xml: &str) -> Result<SclDocument, SclError> {
-    let doc: SclDocument = quick_xml::de::from_str(xml)?;
-    if doc.is_empty() {
+    let direct: Result<SclDocument, _> = quick_xml::de::from_str(xml);
+    let retry = match &direct {
+        Ok(doc) => doc.is_empty(),
+        Err(_) => true,
+    };
+    if retry {
         if let Some(normalized) = strip_namespace_prefixes(xml) {
             if let Ok(doc2) = quick_xml::de::from_str::<SclDocument>(&normalized) {
                 if !doc2.is_empty() {
@@ -22,13 +28,16 @@ pub fn parse_scl_str(xml: &str) -> Result<SclDocument, SclError> {
             }
         }
     }
-    Ok(doc)
+    Ok(direct?)
 }
 
 /// Reescribe el XML quitando el **prefijo de namespace** de los nombres de
-/// elementos y atributos y eliminando las declaraciones `xmlns`. Así los ficheros
+/// elementos y eliminando las declaraciones `xmlns`. Así los ficheros
 /// con todo prefijado (`<scl:SCL>…`) casan con los nombres locales que espera el
-/// parser. Devuelve `None` si el XML no se puede re-tokenizar.
+/// parser. Los **atributos con prefijo** (`xsi:type`, `eABB:…`) pertenecen a
+/// namespaces ajenos al SCL y se **descartan**: localizarlos podría duplicar un
+/// atributo propio del mismo nombre (`type` vs `xsi:type`). Devuelve `None` si
+/// el XML no se puede re-tokenizar.
 fn strip_namespace_prefixes(xml: &str) -> Option<String> {
     use quick_xml::events::{BytesEnd, BytesStart, Event};
     use quick_xml::{Reader, Writer};
@@ -46,11 +55,12 @@ fn strip_namespace_prefixes(xml: &str) -> Option<String> {
         for attr in e.attributes().with_checks(false) {
             let attr = attr.ok()?;
             let key = attr.key.as_ref();
-            // Descarta las declaraciones de namespace.
-            if key == b"xmlns" || key.starts_with(b"xmlns:") {
+            // Descarta las declaraciones de namespace y los atributos de
+            // namespaces ajenos (todo atributo con prefijo).
+            if key == b"xmlns" || key.contains(&b':') {
                 continue;
             }
-            let key_local = String::from_utf8_lossy(local(key)).into_owned();
+            let key_local = String::from_utf8_lossy(key).into_owned();
             let raw = std::str::from_utf8(attr.value.as_ref()).ok()?;
             let value = quick_xml::escape::unescape(raw).ok()?.into_owned();
             out.push_attribute((key_local.as_str(), value.as_str()));

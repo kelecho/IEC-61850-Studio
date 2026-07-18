@@ -183,13 +183,16 @@ fn datasets_and_reports_resolved() {
     let ld = server.logical_device("LD0").unwrap();
     let lln0 = ld.logical_node("LLN0").unwrap();
 
-    assert_eq!(lln0.data_sets.len(), 1);
+    assert_eq!(lln0.data_sets.len(), 2);
     let ds = &lln0.data_sets[0];
     assert_eq!(ds.name, "ds1");
     assert_eq!(ds.entries[0].do_name, "A.phsA.cVal.mag");
     assert_eq!(ds.entries[0].fc, Some(FunctionalConstraint::MX));
+    // ds2: FCDA a nivel DO (sin daName), como en CID reales.
+    assert_eq!(lln0.data_sets[1].name, "ds2");
+    assert!(lln0.data_sets[1].entries[0].da_name.is_empty());
 
-    assert_eq!(lln0.report_controls.len(), 2);
+    assert_eq!(lln0.report_controls.len(), 4);
     let rcb = &lln0.report_controls[0];
     assert_eq!(rcb.name, "rcb1");
     assert_eq!(rcb.dataset.as_deref(), Some("ds1"));
