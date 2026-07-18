@@ -65,7 +65,6 @@ import {
   IconSun,
   IconPlugConnectedX,
   IconTrash,
-  IconWaveSine,
 } from "@tabler/icons-react";
 import { TreeView } from "./components/TreeView";
 import { OperBoard, cardFromDrag, type BoardCard, type DragPayload } from "./components/OperBoard";
@@ -269,8 +268,7 @@ const SECTION_META: Record<string, { title: string; desc: string; norm: string; 
   reportes: { title: "Reportes", desc: "Habilita RCBs y observa los InformationReport en vivo", norm: "IEC 61850-8-1 · RCB", icon: <IconBroadcast size={22} /> },
   control: { title: "Control", desc: "Operar y escribir (con confirmación) sobre el IED", norm: "IEC 61850-7-2 · Control", icon: <IconHandClick size={22} /> },
   watch: { title: "Vigilar", desc: "Lista curada de atributos con sondeo periódico", norm: "IEC 61850-8-1 · Sondeo", icon: <IconEye size={22} /> },
-  goose: { title: "GOOSE", desc: "Monitor, estadísticas y publicación (con simulación Ed.2)", norm: "IEC 61850-8-1 · GOOSE", icon: <IconRss size={22} /> },
-  sv: { title: "Sampled Values", desc: "Monitor 9-2LE con forma de onda y simulación Ed.2", norm: "IEC 61850-9-2LE", icon: <IconWaveSine size={22} /> },
+  bus: { title: "Bus de estación", desc: "Monitor y publicación GOOSE / Sampled Values en la capa 2", norm: "IEC 61850-8-1 / 9-2LE", icon: <IconRss size={22} /> },
   comparar: { title: "Comparar SCL ↔ online", desc: "Diferencias entre el archivo de ingeniería y el dispositivo", norm: "IEC 61850-6 · SCL", icon: <IconGitCompare size={22} /> },
   ficheros: { title: "Ficheros del IED", desc: "Registros de perturbación, COMTRADE y logs (file transfer MMS)", norm: "IEC 61850-8-1 · Ficheros", icon: <IconFolder size={22} /> },
 };
@@ -418,6 +416,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [navCat, setNavCat] = useState<"model" | "datasets" | "reports">("model");
   const [activeTab, setActiveTab] = useState<string | null>("datos");
+  // Sub-pestaña del "Bus de estación" (capa 2): GOOSE o Sampled Values.
+  const [l2Sub, setL2Sub] = useState<"goose" | "sv">("goose");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [dsList, setDsList] = useState<Array<{ domain: string; name: string; count: number }>>([]);
   const [dsView, setDsView] = useState<{
@@ -1651,36 +1651,47 @@ export default function App() {
         <div className="ide-body">
           <nav className="ide-rail">
             {[
+              // Operación: lo que un operador usa a diario.
               { v: "resumen", label: "Resumen", icon: <IconLayoutDashboard size={20} />, n: 0 },
               { v: "datos", label: "Datos", icon: <IconDatabase size={20} />, n: 0 },
-              { v: "reportes", label: "Reportes", icon: <IconBroadcast size={20} />, n: reports.length },
               { v: "control", label: "Control", icon: <IconHandClick size={20} />, n: 0 },
               { v: "watch", label: "Vigilar", icon: <IconEye size={20} />, n: watch.length },
-              { v: "goose", label: "GOOSE", icon: <IconRss size={20} />, n: gooseRows.length },
-              { v: "sv", label: "Sampled Values", icon: <IconWaveSine size={20} />, n: svRows.length },
-              { v: "comparar", label: "Comparar SCL↔online", icon: <IconGitCompare size={20} />, n: 0 },
+              { zone: true },
+              // Tiempo real: flujos que llegan solos.
+              { v: "reportes", label: "Reportes (RCB)", icon: <IconBroadcast size={20} />, n: reports.length },
+              { v: "bus", label: "Bus de estación (GOOSE / SV)", icon: <IconRss size={20} />, n: gooseRows.length + svRows.length },
+              { zone: true },
+              // Ingeniería / mantenimiento: puesta en marcha y verificación.
+              { v: "comparar", label: "Comparar SCL ↔ online", icon: <IconGitCompare size={20} />, n: 0 },
               { v: "ficheros", label: "Ficheros del IED", icon: <IconFolder size={20} />, n: files.length },
-            ].map((s) => (
-              <Tooltip key={s.v} label={s.label} position="right">
-                <ActionIcon
-                  className="ide-rail-btn"
-                  size="xl"
-                  radius="md"
-                  variant={activeTab === s.v ? "filled" : "subtle"}
-                  color={activeTab === s.v ? "brand" : "gray"}
-                  data-active={activeTab === s.v || undefined}
-                  onClick={() => setActiveTab(s.v)}
-                >
-                  {s.n ? (
-                    <Indicator label={s.n} size={15} color="brand" offset={4}>
-                      {s.icon}
-                    </Indicator>
-                  ) : (
-                    s.icon
-                  )}
-                </ActionIcon>
-              </Tooltip>
-            ))}
+            ].map((s, i) =>
+              "zone" in s ? (
+                <div
+                  key={`z${i}`}
+                  style={{ width: 24, height: 1, background: "var(--mantine-color-default-border)", margin: "4px 0" }}
+                />
+              ) : (
+                <Tooltip key={s.v} label={s.label} position="right">
+                  <ActionIcon
+                    className="ide-rail-btn"
+                    size="xl"
+                    radius="md"
+                    variant={activeTab === s.v ? "filled" : "subtle"}
+                    color={activeTab === s.v ? "brand" : "gray"}
+                    data-active={activeTab === s.v || undefined}
+                    onClick={() => setActiveTab(s.v!)}
+                  >
+                    {s.n ? (
+                      <Indicator label={s.n} size={15} color="brand" offset={4}>
+                        {s.icon}
+                      </Indicator>
+                    ) : (
+                      s.icon
+                    )}
+                  </ActionIcon>
+                </Tooltip>
+              ),
+            )}
           </nav>
           <PanelGroup direction="horizontal" autoSaveId="ide-layout" style={{ flex: 1, minHeight: 0 }}>
             <Panel id="nav" defaultSize={26} minSize={14} maxSize={48}>
@@ -2296,8 +2307,19 @@ export default function App() {
             </Stack>
           </Tabs.Panel>
 
-          {/* --- GOOSE --- */}
-          <Tabs.Panel value="goose" pt="sm">
+          {/* --- Bus de estación (capa 2): GOOSE + Sampled Values --- */}
+          <Tabs.Panel value="bus" pt="sm">
+            <SegmentedControl
+              size="xs"
+              mb="sm"
+              value={l2Sub}
+              onChange={(v) => setL2Sub(v as "goose" | "sv")}
+              data={[
+                { label: `GOOSE${gooseRows.length ? ` (${gooseRows.length})` : ""}`, value: "goose" },
+                { label: `Sampled Values${svRows.length ? ` (${svRows.length})` : ""}`, value: "sv" },
+              ]}
+            />
+            {l2Sub === "goose" && (
             <Stack gap="sm">
               <Group align="end" gap="xs">
                 <Select size="xs" w={160} label="Interfaz" data={ifaces} value={iface} onChange={setIface} searchable />
@@ -2466,10 +2488,8 @@ export default function App() {
                 </Table>
               </ScrollArea>
             </Stack>
-          </Tabs.Panel>
-
-          {/* --- Sampled Values --- */}
-          <Tabs.Panel value="sv" pt="sm">
+            )}
+            {l2Sub === "sv" && (
             <Stack gap="sm">
               <Group align="end" gap="xs">
                 <Select size="xs" w={160} label="Interfaz" data={ifaces} value={iface} onChange={setIface} searchable />
@@ -2641,6 +2661,7 @@ export default function App() {
                 </Table>
               </ScrollArea>
             </Stack>
+            )}
           </Tabs.Panel>
 
           {/* --- Comparar SCL ↔ online --- */}
