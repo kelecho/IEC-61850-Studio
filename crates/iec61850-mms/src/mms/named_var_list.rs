@@ -1,6 +1,6 @@
 //! Datasets **dinámicos** (MMS *named variable lists*, IEC 61850-8-1 Ed.2):
-//! `DefineNamedVariableList` [11], `DeleteNamedVariableList` [12] y
-//! `GetNamedVariableListAttributes` [13].
+//! `DefineNamedVariableList` `[11]`, `DeleteNamedVariableList` `[12]` y
+//! `GetNamedVariableListAttributes` `[13]`.
 //!
 //! Permiten a un cliente crear/borrar/introspeccionar datasets en tiempo de
 //! ejecución (además de los definidos estáticamente en el SCL). El nombre de la

@@ -6,7 +6,7 @@
 //! tipo, unicidad de IDs). Esta comprobación cubre los errores prácticos que un
 //! integrador comete al editar SCL a mano, con diagnósticos accionables.
 //!
-//! Complementa a [`crate::resolve::SclDocument::resolve_lenient`] (que detecta
+//! Complementa a [`crate::SclDocument::resolve_lenient`] (que detecta
 //! referencias colgantes durante la instanciación); aquí se validan las
 //! `DataTypeTemplates` de forma independiente.
 

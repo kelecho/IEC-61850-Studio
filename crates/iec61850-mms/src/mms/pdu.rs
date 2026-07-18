@@ -34,7 +34,7 @@ pub mod service {
     pub const GET_VARIABLE_ACCESS_ATTRIBUTES: Tag = Tag::context(6, true);
     // Datasets dinámicos (MMS named variable lists, IEC 61850-8-1 Ed.2).
     pub const DEFINE_NAMED_VARIABLE_LIST: Tag = Tag::context(11, true);
-    /// La **respuesta** de DefineNamedVariableList es `NULL` → tag [11] primitivo.
+    /// La **respuesta** de DefineNamedVariableList es `NULL` → tag `[11]` primitivo.
     pub const DEFINE_NAMED_VARIABLE_LIST_RESPONSE: Tag = Tag::context(11, false);
     pub const DELETE_NAMED_VARIABLE_LIST: Tag = Tag::context(12, true);
     pub const GET_NAMED_VARIABLE_LIST_ATTRIBUTES: Tag = Tag::context(13, true);

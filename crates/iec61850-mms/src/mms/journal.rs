@@ -1,4 +1,4 @@
-//! Servicio MMS `ReadJournal` [65] (logs, ISO 9506 / IEC 61850-8-1): lee las
+//! Servicio MMS `ReadJournal` `[65]` (logs, ISO 9506 / IEC 61850-8-1): lee las
 //! entradas persistidas de un `Log`.
 //!
 //! Cada entrada del journal lleva un `entryID` (octetos), su instante de
