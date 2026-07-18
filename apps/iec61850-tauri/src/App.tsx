@@ -65,6 +65,7 @@ import {
   IconWaveSine,
 } from "@tabler/icons-react";
 import { TreeView } from "./components/TreeView";
+import { OperBoard, cardFromDrag, type BoardCard, type DragPayload } from "./components/OperBoard";
 import { DetailPanel } from "./components/DetailPanel";
 import { cdcDesc, doDesc, lnClassOf, lnDesc } from "./iec61850";
 import {
@@ -445,6 +446,12 @@ export default function App() {
   const [ctrlKind, setCtrlKind] = useState("Bool");
   const [ctrlVal, setCtrlVal] = useState("true");
   const [pending, setPending] = useState<Pending | null>(null);
+  // Panel de operación (drag & drop de componentes con valores en vivo).
+  const [board, setBoard] = useState<BoardCard[]>([]);
+  // IEDs en vivo (servidores MMS desde un SCL del usuario, gestionados en la UI).
+  const [simScl, setSimScl] = useState("");
+  const [simBind, setSimBind] = useState("0.0.0.0:10102");
+  const [liveSims, setLiveSims] = useState<Array<{ addr: string; scl: string }>>([]);
 
   const [readSort, setReadSort] = useState<Sort<"ref" | "val">>({ key: "ref", dir: 1 });
   const [repSort, setRepSort] = useState<Sort<"n" | "rpt" | "seq">>({ key: "n", dir: -1 });
@@ -662,6 +669,12 @@ export default function App() {
       );
     }, 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // IEDs en vivo ya arrancados (si la vista se recarga).
+  useEffect(() => {
+    refreshLiveSims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Polling continuo: refresca en vivo la watch-list curada.
@@ -1029,10 +1042,38 @@ export default function App() {
   }
   async function startSim() {
     try {
-      const a = await invoke<string>("sim_start");
+      const a = await invoke<string>("sim_start", { sclPath: null, bind: null });
       setSimAddr(a);
-      if (!connected) setAddr(a);
+      if (!connected) setAddr(a.replace(/^0\.0\.0\.0/, "127.0.0.1"));
       ok(`simulador IED en ${a}`);
+    } catch (e) {
+      fail(e);
+    }
+  }
+  async function refreshLiveSims() {
+    try {
+      setLiveSims(await invoke<Array<{ addr: string; scl: string }>>("sim_live_list"));
+    } catch {
+      /* sin cambios */
+    }
+  }
+  async function addLiveSim() {
+    try {
+      const a = await invoke<string>("sim_live_start", {
+        sclPath: simScl.trim(),
+        bind: simBind.trim() || "0.0.0.0:10102",
+      });
+      ok(`IED en vivo en ${a}`);
+      if (!connected) setAddr(a.replace(/^0\.0\.0\.0/, "127.0.0.1"));
+      await refreshLiveSims();
+    } catch (e) {
+      fail(e);
+    }
+  }
+  async function stopLiveSim(a: string) {
+    try {
+      await invoke("sim_live_stop", { addr: a });
+      await refreshLiveSims();
     } catch (e) {
       fail(e);
     }
@@ -1171,6 +1212,42 @@ export default function App() {
       },
     });
   }
+  // --- Panel de operación (drag & drop) ---
+  function dropOnBoard(p: DragPayload) {
+    const card = cardFromDrag(p);
+    setBoard((b) => (b.some((c) => c.key === card.key) ? b : [...b, card]));
+    setWatch((w) => Array.from(new Set([...w, ...card.refs])));
+    setPolling(true); // el panel es "en vivo": arranca el refresco si no estaba
+  }
+  function removeCard(key: string) {
+    setBoard((b) => {
+      const gone = b.find((c) => c.key === key);
+      const rest = b.filter((c) => c.key !== key);
+      if (gone) {
+        const still = new Set(rest.flatMap((c) => c.refs));
+        setWatch((w) => w.filter((r) => !gone.refs.includes(r) || still.has(r)));
+      }
+      return rest;
+    });
+  }
+  function clearBoard() {
+    setBoard((b) => {
+      const refs = new Set(b.flatMap((c) => c.refs));
+      setWatch((w) => w.filter((r) => !refs.has(r)));
+      return [];
+    });
+  }
+  function operateFromBoard(coRef: string, value: "true" | "false") {
+    setPending({
+      title: "Confirmar operación",
+      body: `Operar (operate) el control\n  ${coRef}\ncon ctlVal ${value} (Bool)`,
+      run: async () => {
+        await invoke("operate", { reference: coRef, kind: "Bool", value });
+        ok("operado");
+      },
+    });
+  }
+
   function askOperate() {
     const reference = ctrlRef;
     const kind = ctrlKind;
@@ -1362,16 +1439,56 @@ export default function App() {
                     Entorno de pruebas
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Arranca un IED simulado en local para probar sin hardware. No es
-                    necesario para el uso normal (abre un SCL o conecta a un IED real).
+                    Sirve cualquier SCL como IED MMS real desde la propia app —
+                    visible en la red si escuchas en 0.0.0.0. Puedes arrancar varios
+                    (banco de subestación), cada uno en su puerto.
                   </Text>
+                  {liveSims.length > 0 && (
+                    <Stack gap={4}>
+                      {liveSims.map((s) => (
+                        <Group key={s.addr} gap={6} wrap="nowrap" justify="space-between">
+                          <Text size="xs" ff="monospace" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {s.addr} · {s.scl.split("/").pop()}
+                          </Text>
+                          <ActionIcon size="sm" variant="subtle" color="red" title="Detener"
+                            onClick={() => stopLiveSim(s.addr)}>
+                            <IconPlayerStop size={14} />
+                          </ActionIcon>
+                        </Group>
+                      ))}
+                    </Stack>
+                  )}
+                  <Group gap={4} wrap="nowrap">
+                    <TextInput
+                      size="xs"
+                      style={{ flex: 1 }}
+                      placeholder="SCL a servir (.cid/.icd/.scd)"
+                      value={simScl}
+                      onChange={(e) => setSimScl(e.currentTarget.value)}
+                    />
+                    <ActionIcon variant="default" size="input-xs" title="Examinar…"
+                      onClick={() => pickInto(setSimScl, "SCL", ["icd", "cid", "scd", "xml"])}>
+                      <IconFolderOpen size={14} />
+                    </ActionIcon>
+                  </Group>
+                  <TextInput
+                    size="xs"
+                    label="Escucha en"
+                    description="0.0.0.0 = visible en la red; 127.0.0.1 = solo local"
+                    value={simBind}
+                    onChange={(e) => setSimBind(e.currentTarget.value)}
+                  />
+                  <Button size="xs" variant="light" color="grape" leftSection={<IconPlayerPlay size={14} />}
+                    disabled={!simScl.trim()} onClick={addLiveSim}>
+                    Iniciar IED en vivo
+                  </Button>
                   {simAddr ? (
                     <Button size="xs" variant="light" color="red" leftSection={<IconPlayerStop size={14} />} onClick={stopSim}>
-                      Detener simulador ({simAddr})
+                      Detener simulador de ejemplo ({simAddr})
                     </Button>
                   ) : (
-                    <Button size="xs" variant="light" color="grape" leftSection={<IconPlayerPlay size={14} />} onClick={startSim}>
-                      Iniciar simulador local
+                    <Button size="xs" variant="subtle" color="gray" leftSection={<IconPlayerPlay size={14} />} onClick={startSim}>
+                      Simulador de ejemplo (sin SCL)
                     </Button>
                   )}
                 </Stack>
@@ -1885,21 +2002,33 @@ export default function App() {
           </Tabs.Panel>
 
           <Tabs.Panel value="control" pt="sm">
-            <Stack gap="sm" maw={520}>
+            <Stack gap="sm">
               <Text size="sm" c="dimmed">
-                Operar y escribir modifican el IED — piden confirmación.
+                Operar y escribir modifican el IED — piden confirmación. Arrastra
+                componentes del árbol al panel para verlos y operarlos en vivo.
               </Text>
-              <TextInput size="xs" label="Objeto de control [CO]" value={ctrlRef} onChange={(e) => setCtrlRef(e.currentTarget.value)} />
-              <Group align="end" gap="xs">
-                <Select size="xs" w={100} label="Tipo" data={KINDS.filter((k) => k !== "Text")} value={ctrlKind} onChange={(v) => setCtrlKind(v ?? "Bool")} allowDeselect={false} />
-                <TextInput size="xs" w={120} label="ctlVal" value={ctrlVal} onChange={(e) => setCtrlVal(e.currentTarget.value)} />
-                <Button size="xs" variant="default" disabled={!connected} onClick={doSelect}>
-                  Seleccionar
-                </Button>
-                <Button size="xs" color="orange" disabled={!connected} onClick={askOperate}>
-                  Operar…
-                </Button>
-              </Group>
+              <OperBoard
+                cards={board}
+                values={values}
+                connected={connected}
+                onDropPayload={dropOnBoard}
+                onRemove={removeCard}
+                onClear={clearBoard}
+                onOperate={operateFromBoard}
+              />
+              <Stack gap="sm" maw={520}>
+                <TextInput size="xs" label="Objeto de control [CO]" value={ctrlRef} onChange={(e) => setCtrlRef(e.currentTarget.value)} />
+                <Group align="end" gap="xs">
+                  <Select size="xs" w={100} label="Tipo" data={KINDS.filter((k) => k !== "Text")} value={ctrlKind} onChange={(v) => setCtrlKind(v ?? "Bool")} allowDeselect={false} />
+                  <TextInput size="xs" w={120} label="ctlVal" value={ctrlVal} onChange={(e) => setCtrlVal(e.currentTarget.value)} />
+                  <Button size="xs" variant="default" disabled={!connected} onClick={doSelect}>
+                    Seleccionar
+                  </Button>
+                  <Button size="xs" color="orange" disabled={!connected} onClick={askOperate}>
+                    Operar…
+                  </Button>
+                </Group>
+              </Stack>
             </Stack>
           </Tabs.Panel>
 

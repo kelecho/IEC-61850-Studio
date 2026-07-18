@@ -18,7 +18,7 @@ use iec61850::mms::{
     IdentifyResponse, MmsClient, MmsData, MmsServer, Report, ServerModel, TlsClientOptions,
     TlsServerOptions,
 };
-use iec61850::model::{DataAttribute, DataObject};
+use iec61850::model::{BasicType, DataAttribute, DataObject, FunctionalConstraint};
 use iec61850::sv::{
     ETHERTYPE_SV, NineTwoLe, SvChannel, SvConfig, SvEventKind, SvFilter, SvPublisher, SvSubscriber,
 };
@@ -43,6 +43,23 @@ struct SimHandle {
     addr: String,
     serve: JoinHandle<()>,
     vary: JoinHandle<()>,
+}
+
+/// IED **en vivo**: servidor MMS sirviendo un SCL del usuario, arrancado desde
+/// la UI. Puede haber varios a la vez (banco de subestación), cada uno en su
+/// dirección.
+struct LiveSim {
+    /// Ruta del SCL servido (para mostrarla en la UI).
+    scl: String,
+    serve: JoinHandle<()>,
+    vary: JoinHandle<()>,
+}
+
+/// IED en vivo serializado para el frontend.
+#[derive(Serialize)]
+struct LiveSimInfo {
+    addr: String,
+    scl: String,
 }
 
 /// Una conexión MMS abierta (a un IED).
@@ -80,6 +97,8 @@ struct AppState {
     sv_pub: Mutex<Option<JoinHandle<()>>>,
     /// Modelo cargado desde un SCL (para el árbol configurado y los datasets).
     scl_model: Mutex<Option<Model>>,
+    /// IEDs en vivo (servidores MMS desde un SCL del usuario), por dirección.
+    sims_live: Mutex<HashMap<String, LiveSim>>,
 }
 
 fn sim_ident() -> IdentifyResponse {
@@ -777,36 +796,62 @@ async fn select(state: State<'_, AppState>, reference: String) -> Result<String,
     Ok(if granted { "concedido" } else { "denegado" }.to_string())
 }
 
+/// Primer measurand flotante (FC=MX) del modelo: candidato a variar en vivo.
+fn first_measurand(model: &Model) -> Option<ObjectReference> {
+    model.iter_data_attributes().find_map(|(reference, da)| {
+        if da.fc == FunctionalConstraint::MX
+            && matches!(da.basic_type, BasicType::Float32 | BasicType::Float64)
+        {
+            Some(reference)
+        } else {
+            None
+        }
+    })
+}
+
 /// Arranca el IED simulado (servidor MMS) dentro de la propia app y varía un
 /// measurand para que los reportes tengan actividad. Devuelve su dirección.
+///
+/// - `scl_path`: SCL a servir (`.cid`/`.icd`/`.scd`); vacío → el ICD embebido.
+/// - `bind`: dirección de escucha (`0.0.0.0:10102` la hace visible en la LAN);
+///   vacío → `127.0.0.1:10102`.
 #[tauri::command]
-async fn sim_start(state: State<'_, AppState>) -> Result<String, String> {
+async fn sim_start(
+    state: State<'_, AppState>,
+    scl_path: Option<String>,
+    bind: Option<String>,
+) -> Result<String, String> {
     let mut guard = state.sim.lock().await;
     if let Some(h) = guard.as_ref() {
         return Ok(h.addr.clone());
     }
-    // Modelo desde el SCL embebido.
-    let doc = iec61850::scl::parse_scl_str(SIMPLE_ICD).map_err(|e| e.to_string())?;
-    let model = doc.resolve().map_err(|e| e.to_string())?;
+    let model = match scl_path.as_deref().filter(|p| !p.trim().is_empty()) {
+        Some(path) => iec61850::scl::load_model(path).map_err(|e| format!("cargar {path}: {e}"))?,
+        None => iec61850::scl::parse_scl_str(SIMPLE_ICD)
+            .map_err(|e| e.to_string())?
+            .resolve()
+            .map_err(|e| e.to_string())?,
+    };
+    let bind_addr = bind
+        .filter(|b| !b.trim().is_empty())
+        .unwrap_or_else(|| SIM_ADDR.to_string());
     let sm = ServerModel::from_model(&model, sim_ident());
     let store = sm.init_store(&model);
-    let server = MmsServer::bind(SIM_ADDR, Arc::new(sm), store)
+    let server = MmsServer::bind(&bind_addr, Arc::new(sm), store)
         .await
-        .map_err(|e| format!("bind {SIM_ADDR}: {e}"))?;
+        .map_err(|e| format!("bind {bind_addr}: {e}"))?;
     let addr = server
         .local_addr()
         .map(|a| a.to_string())
-        .unwrap_or_else(|_| SIM_ADDR.to_string());
+        .unwrap_or_else(|_| bind_addr.clone());
     let app_handle = server.handle();
     let serve = tokio::spawn(async move {
         let _ = server.serve().await;
     });
-    // Varía una corriente cada segundo (para ver reportes en vivo).
+    // Varía el primer measurand MX flotante del modelo (para ver datos vivos).
+    let member = first_measurand(&model);
     let vary = tokio::spawn(async move {
-        let member: ObjectReference = match "IED1LD0/MMXU1.A.phsA.cVal.mag.f[MX]".parse() {
-            Ok(r) => r,
-            Err(_) => return,
-        };
+        let Some(member) = member else { return };
         let mut t = 0.0f64;
         loop {
             tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -870,6 +915,89 @@ async fn sim_start_tls(state: State<'_, AppState>) -> Result<String, String> {
         vary,
     });
     Ok(addr)
+}
+
+/// Arranca un **IED en vivo** desde un SCL del usuario, en la dirección pedida.
+/// Convive con otros: cada llamada añade un servidor (banco de subestación).
+#[tauri::command]
+async fn sim_live_start(
+    state: State<'_, AppState>,
+    scl_path: String,
+    bind: String,
+) -> Result<String, String> {
+    let scl_path = scl_path.trim().to_string();
+    let bind = bind.trim().to_string();
+    if scl_path.is_empty() {
+        return Err("indica el fichero SCL a servir".into());
+    }
+    let model =
+        iec61850::scl::load_model(&scl_path).map_err(|e| format!("cargar {scl_path}: {e}"))?;
+    let sm = ServerModel::from_model(&model, sim_ident());
+    let store = sm.init_store(&model);
+    let server = MmsServer::bind(&bind, Arc::new(sm), store)
+        .await
+        .map_err(|e| format!("bind {bind}: {e}"))?;
+    let addr = server
+        .local_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| bind.clone());
+    let mut guard = state.sims_live.lock().await;
+    if guard.contains_key(&addr) {
+        return Err(format!("ya hay un IED en vivo en {addr}"));
+    }
+    let app_handle = server.handle();
+    let serve = tokio::spawn(async move {
+        let _ = server.serve().await;
+    });
+    let member = first_measurand(&model);
+    let vary = tokio::spawn(async move {
+        let Some(member) = member else { return };
+        let mut t = 0.0f64;
+        loop {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            t += 0.25;
+            let _ = app_handle
+                .set_value(&member, MmsData::Float(100.0 + 10.0 * t.sin()))
+                .await;
+        }
+    });
+    guard.insert(
+        addr.clone(),
+        LiveSim {
+            scl: scl_path,
+            serve,
+            vary,
+        },
+    );
+    Ok(addr)
+}
+
+/// Lista los IEDs en vivo (dirección + SCL servido).
+#[tauri::command]
+async fn sim_live_list(state: State<'_, AppState>) -> Result<Vec<LiveSimInfo>, String> {
+    let guard = state.sims_live.lock().await;
+    let mut v: Vec<LiveSimInfo> = guard
+        .iter()
+        .map(|(addr, s)| LiveSimInfo {
+            addr: addr.clone(),
+            scl: s.scl.clone(),
+        })
+        .collect();
+    v.sort_by(|a, b| a.addr.cmp(&b.addr));
+    Ok(v)
+}
+
+/// Detiene el IED en vivo que escucha en `addr`.
+#[tauri::command]
+async fn sim_live_stop(state: State<'_, AppState>, addr: String) -> Result<(), String> {
+    match state.sims_live.lock().await.remove(&addr) {
+        Some(s) => {
+            s.serve.abort();
+            s.vary.abort();
+            Ok(())
+        }
+        None => Err(format!("no hay IED en vivo en {addr}")),
+    }
 }
 
 /// Detiene los IED simulados embebidos (plano y TLS).
@@ -1410,6 +1538,9 @@ pub fn run() {
             sim_start,
             sim_start_tls,
             sim_stop,
+            sim_live_start,
+            sim_live_list,
+            sim_live_stop,
             list_interfaces,
             goose_start,
             goose_stop,

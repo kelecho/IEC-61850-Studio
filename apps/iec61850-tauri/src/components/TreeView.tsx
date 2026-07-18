@@ -2,7 +2,11 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Box, Group, Text, UnstyledButton, useComputedColorScheme } from "@mantine/core";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import type { TreeNode } from "../model";
+import { collectLeafRefs } from "../model";
 import { cdcCategory, cdcDesc, doDesc, fcColor, lnClassOf, lnDesc, lnIconKey } from "../iec61850";
+
+/** MIME del arrastre de nodos del árbol (panel de operación, watch…). */
+export const DRAG_MIME = "application/x-iec61850-node";
 
 // Color por clase/grupo de LN (las clases concretas tienen prioridad).
 const LN_CLASS_COLOR: Record<string, string> = { RSYN: "cyan", RREC: "orange", RBRF: "red" };
@@ -131,6 +135,18 @@ const Row = memo(function Row({
       onClick={() => {
         if (expandable) onToggle(node.id);
         else onSelect(node);
+      }}
+      draggable
+      onDragStart={(e: React.DragEvent) => {
+        // Hasta 64 hojas: la carta puntúa (stVal/mag/q/t/Oper) y se queda con
+        // las mejores; cortar antes de puntuar perdería el [CO] en DOs grandes.
+        const refs = collectLeafRefs([node]).slice(0, 64);
+        if (refs.length === 0) return;
+        e.dataTransfer.setData(
+          DRAG_MIME,
+          JSON.stringify({ label: node.label, id: node.id, refs, cdc: node.cdc ?? null }),
+        );
+        e.dataTransfer.effectAllowed = "copy";
       }}
       style={{
         position: "absolute",

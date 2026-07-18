@@ -32,6 +32,15 @@ function AttrRow({ node, values, depth, picked, onPick }: RowProps) {
     return (
       <UnstyledButton
         onClick={() => onPick(node)}
+        draggable={!!node.reference}
+        onDragStart={(e: React.DragEvent) => {
+          if (!node.reference) return;
+          e.dataTransfer.setData(
+            "application/x-iec61850-node",
+            JSON.stringify({ label: node.label, id: node.id, refs: [node.reference], cdc: node.cdc ?? null }),
+          );
+          e.dataTransfer.effectAllowed = "copy";
+        }}
         style={{
           display: "block",
           width: "100%",
