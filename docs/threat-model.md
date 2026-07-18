@@ -65,7 +65,7 @@ evaluación de riesgos del sistema donde se despliega.
 - **Sin validación XSD del SCL**: se confía en la buena formación del XML; la
   robustez se garantiza por fuzzing, no por conformidad de esquema.
 - **Interoperabilidad no certificada**: sin pruebas formales 61850-10 ni contra
-  hardware de terceros (ROADMAP fase 3).
+  hardware de terceros.
 
 ## Referencias
 

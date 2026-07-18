@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   # missing_docs está activo como warn en [workspace.lints] pero aún hay ~700
   # items públicos sin documentar; se excluye del gate hasta completar el
-  # burn-down (ROADMAP fase 1.3) y entonces se retira la excepción.
+  # burn-down de documentación y entonces se retira la excepción.
   LINT_EXCEPTIONS: -A missing-docs
   # Todas las features de los crates de librería. Las features *net* (AF_PACKET)
   # son solo-Linux; ver FEATURES_PORTABLE para el resto de plataformas.

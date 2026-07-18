@@ -2,7 +2,7 @@
 
 Arnés [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html) (libFuzzer)
 sobre todos los parsers que procesan **entrada de red no confiable**. La meta de
-seguridad de la fase 2 del ROADMAP: ninguna entrada debe provocar panic, OOM ni
+seguridad: ninguna entrada debe provocar panic, OOM ni
 desbordamiento de pila.
 
 ## Objetivos

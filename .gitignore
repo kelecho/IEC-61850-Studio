@@ -13,3 +13,6 @@ Cargo.lock
 
 # Base de datos de estado generada en runtime por el servidor/simulador
 log_status.db
+
+# Hoja de ruta comercial: solo local, fuera del repo
+ROADMAP.md
