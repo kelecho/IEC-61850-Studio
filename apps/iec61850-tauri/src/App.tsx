@@ -49,7 +49,10 @@ import {
   IconGitCompare,
   IconHandClick,
   IconLayoutDashboard,
+  IconAlertTriangle,
   IconLock,
+  IconShieldCheck,
+  IconShieldLock,
   IconMoon,
   IconNetwork,
   IconRss,
@@ -229,7 +232,15 @@ type ReportRow = {
   entry_id: string | null;
   entries: ReportEntry[];
 };
-type Pending = { title: string; body: string; run: () => Promise<void> };
+type Pending = {
+  title: string;
+  body: string;
+  run: () => Promise<void>;
+  /** Acción de mando sobre un IED real: exige teclear la palabra de confirmación. */
+  danger?: boolean;
+  /** Aparato/objeto en lenguaje legible, para la cabecera del diálogo. */
+  device?: string;
+};
 type Sort<K extends string> = { key: K; dir: 1 | -1 };
 
 // Acumuladores de estadísticas por stream (en un ref, no provocan render).
@@ -442,10 +453,18 @@ export default function App() {
 
   const [writeKind, setWriteKind] = useState("Float");
   const [writeVal, setWriteVal] = useState("");
-  const [ctrlRef, setCtrlRef] = useState("IED1LD0/GGIO1.SPCSO1[CO]");
+  const [ctrlRef, setCtrlRef] = useState("");
   const [ctrlKind, setCtrlKind] = useState("Bool");
   const [ctrlVal, setCtrlVal] = useState("true");
   const [pending, setPending] = useState<Pending | null>(null);
+  // Texto tecleado en el diálogo de maniobra (barrera anti-clic accidental).
+  const [confirmText, setConfirmText] = useState("");
+  // Modo mando: la app arranca en SOLO LECTURA; escribir/operar/publicar exige
+  // armarlo explícitamente. Evita maniobras accidentales en un IED productivo.
+  const [commandMode, setCommandMode] = useState(false);
+  // El sondeo dejó de refrescar (conexión caída): los valores mostrados están
+  // caducados aunque sigan en pantalla.
+  const [pollStale, setPollStale] = useState(false);
   // Panel de operación (drag & drop de componentes con valores en vivo).
   const [board, setBoard] = useState<BoardCard[]>([]);
   // IEDs en vivo (servidores MMS desde un SCL del usuario, gestionados en la UI).
@@ -482,6 +501,25 @@ export default function App() {
   });
   const [gStats, setGStats] = useState<GStat[]>([]);
   const [sStats, setSStats] = useState<SStat[]>([]);
+
+  // ¿La conexión activa es un IED simulado nuestro (banco de pruebas) o un IED
+  // real? Solo se considera simulado si su dirección está en el conjunto de
+  // simuladores que hemos arrancado; ante la duda se asume REAL (más estricto).
+  const activeConnId = conns.find((c) => c.active)?.id ?? null;
+  const simAddrs = useMemo(() => {
+    const s = new Set<string>();
+    if (simAddr) s.add(simAddr);
+    s.add("127.0.0.1:10103"); // sim TLS embebido
+    for (const l of liveSims) {
+      s.add(l.addr);
+      s.add(l.addr.replace(/^0\.0\.0\.0/, "127.0.0.1"));
+    }
+    return s;
+  }, [simAddr, liveSims]);
+  const activeIsSim = activeConnId ? simAddrs.has(activeConnId) : false;
+  // Las maniobras sobre un IED REAL exigen la barrera reforzada; sobre el
+  // simulador basta la confirmación simple.
+  const dangerZone = connected && !activeIsSim;
 
   const tree = useMemo(() => {
     const base = treeSource === "scl" ? sclTree : buildTree(domains);
@@ -688,15 +726,19 @@ export default function App() {
       const refs = pollRefs.current;
       if (refs.length === 0) return;
       const updated = new Map<string, string>();
+      let failures = 0;
       for (const ref of refs) {
         try {
           const v = await invoke<string>("read", { reference: ref });
           if (!cancelled) updated.set(ref, v);
         } catch {
-          /* ignora lecturas fallidas durante el polling */
+          failures++; // lectura fallida: los valores mostrados quedan caducados
         }
       }
-      if (cancelled || updated.size === 0) return;
+      if (cancelled) return;
+      // Si TODAS las lecturas fallan, el sondeo está caído: marca datos caducados.
+      setPollStale(refs.length > 0 && updated.size === 0 && failures > 0);
+      if (updated.size === 0) return;
       setValues((prev) => {
         const m = new Map(prev);
         updated.forEach((v, k) => m.set(k, v));
@@ -708,6 +750,7 @@ export default function App() {
     return () => {
       cancelled = true;
       clearInterval(id);
+      setPollStale(false);
     };
   }, [polling, connected, pollMs]);
 
@@ -817,6 +860,7 @@ export default function App() {
     setDetail(null);
     setSelRef(null);
     setWatch([]);
+    setCommandMode(false); // cada IED se re-arma explícitamente (seguridad)
     try {
       setDomains(await invoke<DomainItems[]>("discover"));
     } catch {
@@ -1161,7 +1205,7 @@ export default function App() {
     setSvOn(false);
   }
   async function goosePubStart() {
-    if (!iface) return;
+    if (!iface || !commandMode) return;
     try {
       await invoke("goose_pub_start", { iface, simulation: pubSim });
       setGoosePubOn(true);
@@ -1179,7 +1223,7 @@ export default function App() {
     setGoosePubOn(false);
   }
   async function svPubStart() {
-    if (!iface) return;
+    if (!iface || !commandMode) return;
     try {
       await invoke("sv_pub_start", { iface, simulation: pubSim });
       setSvPubOn(true);
@@ -1198,12 +1242,15 @@ export default function App() {
   }
 
   function askWrite() {
-    if (!selRef) return;
+    if (!selRef || !commandMode) return;
     const reference = selRef;
     const kind = writeKind;
     const value = writeVal;
+    setConfirmText("");
     setPending({
       title: "Confirmar escritura",
+      device: deviceLabel(reference),
+      danger: dangerZone,
       body: `Escribir en\n  ${reference}\nel valor ${value} (${kind})`,
       run: async () => {
         await invoke("write", { reference, kind, value });
@@ -1238,8 +1285,12 @@ export default function App() {
     });
   }
   function operateFromBoard(coRef: string, value: "true" | "false") {
+    if (!commandMode) return;
+    setConfirmText("");
     setPending({
-      title: "Confirmar operación",
+      title: "Confirmar maniobra",
+      device: deviceLabel(coRef),
+      danger: dangerZone,
       body: `Operar (operate) el control\n  ${coRef}\ncon ctlVal ${value} (Bool)`,
       run: async () => {
         await invoke("operate", { reference: coRef, kind: "Bool", value });
@@ -1249,11 +1300,15 @@ export default function App() {
   }
 
   function askOperate() {
+    if (!commandMode) return;
     const reference = ctrlRef;
     const kind = ctrlKind;
     const value = ctrlVal;
+    setConfirmText("");
     setPending({
-      title: "Confirmar operación",
+      title: "Confirmar maniobra",
+      device: deviceLabel(reference),
+      danger: dangerZone,
       body: `Operar (operate) el control\n  ${reference}\ncon ctlVal ${value} (${kind})`,
       run: async () => {
         await invoke("operate", { reference, kind, value });
@@ -1261,9 +1316,24 @@ export default function App() {
       },
     });
   }
+  // Nombre legible del aparato a partir de la referencia (sin FC): p. ej.
+  // "IED1LD0/CSWI1.Pos[CO]" → "IED1LD0 · CSWI1 · Pos".
+  function deviceLabel(ref: string): string {
+    const noFc = ref.replace(/\[[A-Z]{2}\]$/, "");
+    const [ld, rest] = noFc.split("/");
+    if (!rest) return noFc;
+    const [ln, ...segs] = rest.split(".");
+    const meaning = doDesc(segs[segs.length - 1] ?? "") ?? lnDesc(ln);
+    const base = [ld, ln, ...segs].join(" · ");
+    return meaning ? `${base}  (${meaning})` : base;
+  }
+  // La palabra que hay que teclear para armar una maniobra sobre un IED real.
+  const CONFIRM_WORD = "OPERAR";
   async function confirmPending() {
     const p = pending;
+    if (p?.danger && confirmText.trim().toUpperCase() !== CONFIRM_WORD) return;
     setPending(null);
+    setConfirmText("");
     if (p) {
       try {
         await p.run();
@@ -1419,9 +1489,35 @@ export default function App() {
             ))}
           </Group>
           <Group gap="xs" wrap="nowrap">
+            {connected && (
+              <Badge color={activeIsSim ? "grape" : "red"} variant={activeIsSim ? "light" : "filled"}>
+                {activeIsSim ? "SIMULADOR" : "IED REAL"}
+              </Badge>
+            )}
             <Badge color={connected ? "teal" : "gray"} variant="light">
               {connected ? status : "desconectado"}
             </Badge>
+            <Tooltip
+              label={
+                commandMode
+                  ? "Modo mando ARMADO: se permite escribir y operar. Clic para volver a solo lectura."
+                  : "Solo lectura. Clic para armar el modo mando (escribir/operar)."
+              }
+              position="bottom"
+              multiline
+              w={240}
+            >
+              <ActionIcon
+                size="lg"
+                variant={commandMode ? "filled" : "default"}
+                color={commandMode ? "red" : "gray"}
+                disabled={!connected}
+                onClick={() => setCommandMode((m) => !m)}
+                aria-label="Armar/desarmar modo mando"
+              >
+                {commandMode ? <IconShieldLock size={16} /> : <IconShieldCheck size={16} />}
+              </ActionIcon>
+            </Tooltip>
             <Popover width={300} position="bottom-end" withArrow shadow="md">
               <Popover.Target>
                 <ActionIcon
@@ -1504,6 +1600,36 @@ export default function App() {
             </ActionIcon>
           </Group>
         </div>
+        {commandMode && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "4px 12px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              color: "#fff",
+              background: dangerZone
+                ? "var(--mantine-color-red-7)"
+                : "var(--mantine-color-grape-7)",
+            }}
+          >
+            <IconShieldLock size={15} />
+            {dangerZone
+              ? `MODO MANDO ARMADO — IED REAL (${activeConnId}). Escribir y operar están habilitados.`
+              : `Modo mando armado — simulador (${activeConnId}).`}
+            <Button
+              size="compact-xs"
+              variant="white"
+              color="dark"
+              ml="auto"
+              onClick={() => setCommandMode(false)}
+            >
+              Volver a solo lectura
+            </Button>
+          </div>
+        )}
         <div className="ide-body">
           <nav className="ide-rail">
             {[
@@ -1803,9 +1929,11 @@ export default function App() {
                   <Group align="end" gap="xs">
                     <Select size="xs" w={100} label="Tipo" data={KINDS} value={writeKind} onChange={(v) => setWriteKind(v ?? "Float")} allowDeselect={false} />
                     <TextInput size="xs" w={140} label="Valor" value={writeVal} onChange={(e) => setWriteVal(e.currentTarget.value)} />
-                    <Button size="xs" color="orange" disabled={!connected || !selRef} onClick={askWrite}>
-                      Escribir…
-                    </Button>
+                    <Tooltip label="Arma el modo mando (escudo en la cabecera) para escribir" disabled={commandMode} position="top">
+                      <Button size="xs" color="orange" disabled={!connected || !selRef || !commandMode} onClick={askWrite}>
+                        Escribir…
+                      </Button>
+                    </Tooltip>
                     <Text size="xs" c="dimmed">
                       en {selRef ? <Code>{selRef}</Code> : "(elige un atributo)"}
                     </Text>
@@ -2003,30 +2131,46 @@ export default function App() {
 
           <Tabs.Panel value="control" pt="sm">
             <Stack gap="sm">
+              {connected && !commandMode && (
+                <Paper withBorder p="xs" radius="md" bg="var(--mantine-color-default-hover)">
+                  <Group gap="xs" wrap="nowrap">
+                    <IconShieldCheck size={18} color="var(--mantine-color-teal-6)" />
+                    <Text size="sm">
+                      <b>Solo lectura.</b> Para escribir u operar, arma el modo mando con el escudo
+                      de la cabecera. {dangerZone && "Estás conectado a un IED real."}
+                    </Text>
+                    <Button size="compact-xs" color="red" ml="auto" onClick={() => setCommandMode(true)}>
+                      Armar mando
+                    </Button>
+                  </Group>
+                </Paper>
+              )}
               <Text size="sm" c="dimmed">
-                Operar y escribir modifican el IED — piden confirmación. Arrastra
-                componentes del árbol al panel para verlos y operarlos en vivo.
+                Arrastra componentes del árbol al panel para verlos y operarlos en vivo. Cada
+                maniobra pide confirmación; sobre un IED real, además exige teclear «{CONFIRM_WORD}».
               </Text>
               <OperBoard
                 cards={board}
                 values={values}
-                connected={connected}
+                connected={connected && commandMode}
                 onDropPayload={dropOnBoard}
                 onRemove={removeCard}
                 onClear={clearBoard}
                 onOperate={operateFromBoard}
               />
               <Stack gap="sm" maw={520}>
-                <TextInput size="xs" label="Objeto de control [CO]" value={ctrlRef} onChange={(e) => setCtrlRef(e.currentTarget.value)} />
+                <TextInput size="xs" label="Objeto de control [CO]" placeholder="selecciona un control en el árbol o escribe su referencia" value={ctrlRef} onChange={(e) => setCtrlRef(e.currentTarget.value)} />
                 <Group align="end" gap="xs">
                   <Select size="xs" w={100} label="Tipo" data={KINDS.filter((k) => k !== "Text")} value={ctrlKind} onChange={(v) => setCtrlKind(v ?? "Bool")} allowDeselect={false} />
                   <TextInput size="xs" w={120} label="ctlVal" value={ctrlVal} onChange={(e) => setCtrlVal(e.currentTarget.value)} />
-                  <Button size="xs" variant="default" disabled={!connected} onClick={doSelect}>
+                  <Button size="xs" variant="default" disabled={!connected || !ctrlRef} onClick={doSelect}>
                     Seleccionar
                   </Button>
-                  <Button size="xs" color="orange" disabled={!connected} onClick={askOperate}>
-                    Operar…
-                  </Button>
+                  <Tooltip label="Arma el modo mando para operar" disabled={commandMode} position="top">
+                    <Button size="xs" color="orange" disabled={!connected || !ctrlRef || !commandMode} onClick={askOperate}>
+                      Operar…
+                    </Button>
+                  </Tooltip>
                 </Group>
               </Stack>
             </Stack>
@@ -2189,9 +2333,11 @@ export default function App() {
                     Detener pub. demo
                   </Button>
                 ) : (
-                  <Button size="xs" variant="light" color="grape" disabled={!iface} onClick={goosePubStart}>
-                    Publicar demo
-                  </Button>
+                  <Tooltip label="Publicar inyecta tramas en el bus: arma el modo mando" disabled={commandMode} position="top" multiline w={230}>
+                    <Button size="xs" variant="light" color="grape" disabled={!iface || !commandMode} onClick={goosePubStart}>
+                      Publicar demo
+                    </Button>
+                  </Tooltip>
                 )}
                 <Switch
                   size="xs"
@@ -2346,9 +2492,11 @@ export default function App() {
                     Detener pub. demo
                   </Button>
                 ) : (
-                  <Button size="xs" variant="light" color="grape" disabled={!iface} onClick={svPubStart}>
-                    Publicar demo
-                  </Button>
+                  <Tooltip label="Publicar inyecta tramas en el bus: arma el modo mando" disabled={commandMode} position="top" multiline w={230}>
+                    <Button size="xs" variant="light" color="grape" disabled={!iface || !commandMode} onClick={svPubStart}>
+                      Publicar demo
+                    </Button>
+                  </Tooltip>
                 )}
                 <Text size="xs" c="dimmed">
                   capa 2 — requiere CAP_NET_RAW/root
@@ -2564,11 +2712,23 @@ export default function App() {
         </div>
         <div className="ide-statusbar">
           <span className="status-dot" data-off={!connected || undefined} />
-          <span>{connected ? `Conectado a ${addr}` : "Sin conexión"}</span>
+          <span>{connected ? `Conectado a ${activeConnId ?? addr}` : "Sin conexión"}</span>
+          {connected && (
+            <span style={{ color: activeIsSim ? "var(--mantine-color-grape-5)" : "var(--mantine-color-red-5)", fontWeight: 600 }}>
+              {activeIsSim ? "SIMULADOR" : "IED REAL"}
+            </span>
+          )}
+          {connected && (
+            <span style={{ color: commandMode ? "var(--mantine-color-red-5)" : "var(--mantine-color-dimmed)", fontWeight: commandMode ? 600 : 400 }}>
+              {commandMode ? "MANDO ARMADO" : "solo lectura"}
+            </span>
+          )}
           <span>Reportes: {reports.length}</span>
           {polling && (
-            <span style={{ color: "var(--mantine-color-teal-6)" }}>
-              Polling {Math.max(200, pollMs)}ms · {watch.length} ref
+            <span style={{ color: pollStale ? "var(--mantine-color-red-5)" : "var(--mantine-color-teal-6)", fontWeight: pollStale ? 600 : 400 }}>
+              {pollStale
+                ? `SIN REFRESCAR · datos caducados`
+                : `Polling ${Math.max(200, pollMs)}ms · ${watch.length} ref`}
             </span>
           )}
           {simAddr && <span>Simulador: {simAddr}</span>}
@@ -2718,16 +2878,69 @@ export default function App() {
         )}
       </Modal>
 
-      <Modal opened={!!pending} onClose={() => setPending(null)} title={`⚠ ${pending?.title ?? ""}`} centered>
+      <Modal
+        opened={!!pending}
+        onClose={() => {
+          setPending(null);
+          setConfirmText("");
+        }}
+        title={
+          <Group gap="xs">
+            <IconAlertTriangle size={18} color="var(--mantine-color-orange-6)" />
+            <Text fw={600}>{pending?.title}</Text>
+          </Group>
+        }
+        centered
+      >
+        {pending?.device && (
+          <Paper withBorder p="xs" radius="md" mb="sm">
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              Aparato
+            </Text>
+            <Text size="sm" fw={600} ff="monospace">
+              {pending.device}
+            </Text>
+          </Paper>
+        )}
+        {pending?.danger ? (
+          <Badge color="red" variant="light" mb="xs">
+            IED REAL · {activeConnId}
+          </Badge>
+        ) : (
+          <Badge color="grape" variant="light" mb="xs">
+            Simulador · {activeConnId}
+          </Badge>
+        )}
         <Text size="sm" style={{ whiteSpace: "pre-wrap" }} ff="monospace">
           {pending?.body}
         </Text>
+        {pending?.danger && (
+          <TextInput
+            mt="md"
+            size="sm"
+            label={`Maniobra sobre un IED real: teclea ${CONFIRM_WORD} para habilitar`}
+            placeholder={CONFIRM_WORD}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.currentTarget.value)}
+            autoFocus
+          />
+        )}
         <Group justify="flex-end" mt="md">
-          <Button variant="default" onClick={() => setPending(null)}>
+          <Button
+            variant="default"
+            onClick={() => {
+              setPending(null);
+              setConfirmText("");
+            }}
+          >
             Cancelar
           </Button>
-          <Button color="orange" onClick={confirmPending}>
-            Confirmar
+          <Button
+            color={pending?.danger ? "red" : "orange"}
+            disabled={pending?.danger && confirmText.trim().toUpperCase() !== CONFIRM_WORD}
+            onClick={confirmPending}
+          >
+            {pending?.danger ? "Ejecutar maniobra" : "Confirmar"}
           </Button>
         </Group>
       </Modal>
