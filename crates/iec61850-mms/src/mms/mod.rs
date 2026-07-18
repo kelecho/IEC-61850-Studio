@@ -23,7 +23,7 @@ pub use initiate::{InitiateRequest, InitiateResponse};
 pub use journal::JournalEntry;
 pub use named_var_list::{DeleteResult, ListAttributes};
 pub use read::AccessResult;
-pub use report::{CommandTermination, Report, ReportConfig, ReportEntry};
+pub use report::{CommandTermination, LastApplError, Report, ReportConfig, ReportEntry};
 #[cfg(feature = "tokens")]
 pub use token::{AccessToken, TokenError};
 pub use type_attr::{StructComponent, TypeSpec, VariableAttributes};

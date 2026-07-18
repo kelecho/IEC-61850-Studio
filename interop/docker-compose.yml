@@ -23,3 +23,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Servidor con TODOS los modelos de control del 7-2 (SPCSO1..4:
+  # direct-normal, sbo-normal, direct-enhanced, sbo-enhanced) para
+  # verificar Oper/SBO/Cancel/CommandTermination/AddCause.
+  # Arnés: IEC61850_INTEROP_CONTROL_ADDR=127.0.0.1:10103
+  libiec61850-control:
+    build:
+      context: .
+      dockerfile: Dockerfile.libiec61850
+      args:
+        LIBIEC61850_REF: v1.5.3
+    command: ["server_example_control"]
+    ports:
+      - "10103:102"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q ':0066' /proc/net/tcp || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

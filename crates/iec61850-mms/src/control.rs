@@ -11,6 +11,69 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::ber::prim::BitString;
 use crate::mms::data::{MmsData, UtcTime};
 
+/// Códigos `AddCause` del modelo de control (IEC 61850-7-2 Ed.2, causas
+/// adicionales de un rechazo o terminación negativa). Viajan en el
+/// `LastApplError` (IEC 61850-8-1) que acompaña a un Write− o a una
+/// `CommandTermination` negativa.
+pub mod add_cause {
+    /// Causa desconocida.
+    pub const UNKNOWN: i64 = 0;
+    /// Servicio no soportado por el objeto.
+    pub const NOT_SUPPORTED: i64 = 1;
+    /// Bloqueado por jerarquía de conmutación.
+    pub const BLOCKED_BY_SWITCHING_HIERARCHY: i64 = 2;
+    /// La selección (SBO) falló.
+    pub const SELECT_FAILED: i64 = 3;
+    /// Posición inválida (ya está en la posición pedida).
+    pub const INVALID_POSITION: i64 = 4;
+    /// Posición alcanzada.
+    pub const POSITION_REACHED: i64 = 5;
+    /// Cambio de parámetro en ejecución.
+    pub const PARAMETER_CHANGE_IN_EXECUTION: i64 = 6;
+    /// Límite de pasos alcanzado.
+    pub const STEP_LIMIT: i64 = 7;
+    /// Bloqueado por el modo (Mod) del LN.
+    pub const BLOCKED_BY_MODE: i64 = 8;
+    /// Bloqueado por el proceso.
+    pub const BLOCKED_BY_PROCESS: i64 = 9;
+    /// Bloqueado por enclavamiento (interlocking).
+    pub const BLOCKED_BY_INTERLOCKING: i64 = 10;
+    /// Bloqueado por comprobación de sincronismo.
+    pub const BLOCKED_BY_SYNCHROCHECK: i64 = 11;
+    /// Ya hay un comando en ejecución sobre el objeto.
+    pub const COMMAND_ALREADY_IN_EXECUTION: i64 = 12;
+    /// Bloqueado por el estado de salud (Health) del LN.
+    pub const BLOCKED_BY_HEALTH: i64 = 13;
+    /// Restricción 1-de-N.
+    pub const ONE_OF_N_CONTROL: i64 = 14;
+    /// Abortado por un Cancel.
+    pub const ABORTION_BY_CANCEL: i64 = 15;
+    /// Expiró el tiempo entre select y operate (`sboTimeout`).
+    pub const TIME_LIMIT_OVER: i64 = 16;
+    /// Abortado por disparo (trip).
+    pub const ABORTION_BY_TRIP: i64 = 17;
+    /// Operate sin selección previa (modelos SBO).
+    pub const OBJECT_NOT_SELECTED: i64 = 18;
+    /// El objeto ya estaba seleccionado.
+    pub const OBJECT_ALREADY_SELECTED: i64 = 19;
+    /// Sin autoridad de acceso.
+    pub const NO_ACCESS_AUTHORITY: i64 = 20;
+    /// Terminó con sobrepaso (overshoot).
+    pub const ENDED_WITH_OVERSHOOT: i64 = 21;
+    /// Abortado por desviación del valor objetivo.
+    pub const ABORTION_DUE_TO_DEVIATION: i64 = 22;
+    /// Abortado por pérdida de comunicación.
+    pub const ABORTION_BY_COMMUNICATION_LOSS: i64 = 23;
+    /// Bloqueado por comando (bloqueo explícito).
+    pub const BLOCKED_BY_COMMAND: i64 = 24;
+    /// Sin causa adicional.
+    pub const NONE: i64 = 25;
+    /// Parámetros del comando inconsistentes.
+    pub const INCONSISTENT_PARAMETERS: i64 = 26;
+    /// Seleccionado/bloqueado por otro cliente.
+    pub const LOCKED_BY_OTHER_CLIENT: i64 = 27;
+}
+
 /// Categoría del originador del control (`orCat`, IEC 61850-7-3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrCat {

@@ -38,6 +38,23 @@ Para file transfer se necesita un servidor con file service habilitado, p. ej.
 Usa **`--test-threads=1`**: server_example_basic_io acepta pocas conexiones
 concurrentes y varios tests asociándose a la vez lo saturan.
 
+### Modelos de control (server_example_control)
+
+El compose levanta además `server_example_control` (puerto **10103**), que expone
+`GGIO1.SPCSO1..4` con los cuatro modelos operables del 7-2 (direct-normal,
+sbo-normal, direct-enhanced, sbo-enhanced). Los tests `interop_control_*` lo usan:
+
+```sh
+IEC61850_INTEROP_CONTROL_ADDR=127.0.0.1:10103 \
+  cargo test -p iec61850-mms --features client --test interop_client \
+    interop_control -- --nocapture --test-threads=1
+```
+
+Cubren: lectura del `ctlModel` de cada SPCSO, operate directo, select+operate
+(SBO), `operate_enhanced` con recepción de **CommandTermination+** y el rechazo
+de un operate sin select con **LastApplError** (AddCause 18, object-not-selected)
+emitido por libiec61850 y decodificado por nuestro cliente.
+
 ## 2. Su cliente ↔ nuestro servidor
 
 El sentido inverso usa nuestro simulador y el cliente de ejemplo de libiec61850.
@@ -111,6 +128,15 @@ regresión propia (no vendorizada). Historial:
 Servicios verificados contra libiec61850 v1.6.1 (cliente→servidor): asociación ·
 Identify · GetServerDirectory · GetLogicalDeviceDirectory · Read · Write · control
 directo (Oper→stVal) · SBO · reporting URCB y BRCB (EntryID) · file transfer.
+
+Contra `server_example_control` (v1.5.3, puerto 10103): los **cuatro modelos de
+control operables del 7-2** — direct-normal, sbo-normal (select+operate),
+direct-enhanced y sbo-enhanced (`SBOw` + `Oper` + **CommandTermination+**), más
+el rechazo de un operate sin select con **LastApplError** (AddCause 18,
+object-not-selected) decodificado y correlacionado por nuestro cliente. De aquí
+salieron dos correcciones de conformidad propias: el AddCause de interlocking
+(1→**10**) y la CommandTermination− (el `failure` lleva `DataAccessError`; el
+AddCause viaja en el LastApplError previo).
 
 ### Bugs de conformidad del **servidor** (sentido inverso, su cliente → nuestro sim)
 

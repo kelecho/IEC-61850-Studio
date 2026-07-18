@@ -60,9 +60,24 @@
             </DOI>
           </LN>
           <LN prefix="" lnClass="GGIO" inst="1" lnType="GGIO_0">
+            <DOI name="SPCSO1">
+              <DAI name="ctlModel">
+                <Val>1</Val>
+              </DAI>
+            </DOI>
             <DOI name="SPCSO2">
               <DAI name="ctlModel">
                 <Val>4</Val>
+              </DAI>
+            </DOI>
+            <DOI name="SPCSO3">
+              <DAI name="ctlModel">
+                <Val>2</Val>
+              </DAI>
+            </DOI>
+            <DOI name="SPCSO4">
+              <DAI name="ctlModel">
+                <Val>0</Val>
               </DAI>
             </DOI>
           </LN>
@@ -87,8 +102,10 @@
       <DO name="A" type="WYE_0" desc="Corriente de fase"/>
     </LNodeType>
     <LNodeType id="GGIO_0" lnClass="GGIO">
-      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1"/>
-      <DO name="SPCSO2" type="SPC_0"/>
+      <DO name="SPCSO1" type="SPC_0" desc="Salida controlable 1 (direct-normal)"/>
+      <DO name="SPCSO2" type="SPC_0" desc="sbo-enhanced"/>
+      <DO name="SPCSO3" type="SPC_0" desc="sbo-normal"/>
+      <DO name="SPCSO4" type="SPC_0" desc="status-only"/>
     </LNodeType>
     <LNodeType id="PTOC_0" lnClass="PTOC">
       <DO name="StrVal" type="ING_0" desc="Ajuste de arranque (setting group)"/>
@@ -116,6 +133,7 @@
       <DA name="q" bType="Quality" fc="ST" qchg="true"/>
       <DA name="t" bType="Timestamp" fc="ST"/>
       <DA name="ctlModel" bType="Enum" type="CtlModelKind" fc="CF"/>
+      <DA name="sboTimeout" bType="INT32U" fc="CF"/>
       <DA name="Oper" bType="Struct" type="SPCOper_0" fc="CO"/>
       <DA name="Cancel" bType="Struct" type="SPCOper_0" fc="CO"/>
     </DOType>
@@ -148,6 +166,9 @@
     <EnumType id="CtlModelKind">
       <EnumVal ord="0">status-only</EnumVal>
       <EnumVal ord="1">direct-with-normal-security</EnumVal>
+      <EnumVal ord="2">sbo-with-normal-security</EnumVal>
+      <EnumVal ord="3">direct-with-enhanced-security</EnumVal>
+      <EnumVal ord="4">sbo-with-enhanced-security</EnumVal>
     </EnumType>
   </DataTypeTemplates>
 </SCL>

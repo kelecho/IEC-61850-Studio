@@ -29,7 +29,7 @@ use crate::mms::journal;
 use crate::mms::named_var_list;
 use crate::mms::pdu::{self, PduKind};
 use crate::mms::read::{self, AccessResult};
-use crate::mms::report::{self, CommandTermination, Report, ReportConfig};
+use crate::mms::report::{self, CommandTermination, LastApplError, Report, ReportConfig};
 use crate::mms::type_attr::{self, VariableAttributes};
 use crate::mms::write::{self, WriteResult};
 use crate::transport::connection::{IsoConnection, IsoReader};
@@ -62,6 +62,9 @@ type PendingMap = HashMap<u32, oneshot::Sender<Result<Vec<u8>, MmsError>>>;
 
 struct Shared {
     pending: Mutex<PendingMap>,
+    /// Último `LastApplError` recibido (control): la causa detallada del último
+    /// rechazo/terminación negativa, correlacionable por objeto de control.
+    last_appl_error: std::sync::Mutex<Option<LastApplError>>,
 }
 
 /// Cliente MMS conectado y asociado a un servidor.
@@ -169,6 +172,7 @@ impl MmsClient {
         let (reader, writer) = conn.split();
         let shared = Arc::new(Shared {
             pending: Mutex::new(HashMap::new()),
+            last_appl_error: std::sync::Mutex::new(None),
         });
         let (report_tx, report_rx) = mpsc::channel(256);
         let (term_tx, _) = broadcast::channel(64);
@@ -522,6 +526,8 @@ impl MmsClient {
     }
 
     /// Control directo con parámetros explícitos (origin, ctlNum, Test, Check).
+    /// Un Write− acompañado de `LastApplError` se devuelve como
+    /// [`MmsError::ControlTerminated`] con su AddCause.
     pub async fn operate_with(
         &self,
         do_control: &ObjectReference,
@@ -530,7 +536,8 @@ impl MmsClient {
     ) -> Result<(), MmsError> {
         let oper = control::build_oper(ctl_val, params, control::now_utc());
         let (domain, item) = control_item(do_control, "Oper")?;
-        self.write_raw(&domain, &item, &oper).await?.into_result()
+        let res = self.write_raw(&domain, &item, &oper).await?.into_result();
+        self.map_control_failure(&item, res)
     }
 
     /// Select-before-operate (seguridad normal): lee `SBO`. `true` = concedido.
@@ -543,7 +550,9 @@ impl MmsClient {
         }
     }
 
-    /// Select-with-value: escribe `SBOw` (estructura igual a `Oper`).
+    /// Select-with-value: escribe `SBOw` (estructura igual a `Oper`). Si el
+    /// servidor rechaza con un `LastApplError`, devuelve
+    /// [`MmsError::ControlTerminated`] con su AddCause.
     pub async fn select_with_value(
         &self,
         do_control: &ObjectReference,
@@ -552,7 +561,29 @@ impl MmsClient {
     ) -> Result<(), MmsError> {
         let sbow = control::build_oper(ctl_val, params, control::now_utc());
         let (domain, item) = control_item(do_control, "SBOw")?;
-        self.write_raw(&domain, &item, &sbow).await?.into_result()
+        let res = self.write_raw(&domain, &item, &sbow).await?.into_result();
+        self.map_control_failure(&item, res)
+    }
+
+    /// Causa detallada (`LastApplError`) del último fallo de control recibido,
+    /// si la hay. Consultarlo la consume.
+    pub fn take_last_appl_error(&self) -> Option<LastApplError> {
+        self.shared.last_appl_error.lock().unwrap().take()
+    }
+
+    /// Si el Write de control falló y hay un `LastApplError` del mismo objeto,
+    /// convierte el error en [`MmsError::ControlTerminated`] con su AddCause.
+    fn map_control_failure(&self, item: &str, res: Result<(), MmsError>) -> Result<(), MmsError> {
+        let Err(e) = res else { return Ok(()) };
+        let mut g = self.shared.last_appl_error.lock().unwrap();
+        if let Some(lae) = g.as_ref() {
+            if lae.cntrl_obj.ends_with(item) {
+                let add_cause = lae.add_cause;
+                *g = None;
+                return Err(MmsError::ControlTerminated { add_cause });
+            }
+        }
+        Err(e)
     }
 
     // --- Control de seguridad reforzada (enhanced security) ---
@@ -576,8 +607,11 @@ impl MmsClient {
         let (domain, item) = control_item(do_control, "Oper")?;
         // Suscribir ANTES de enviar para no perder la terminación.
         let mut term_rx = self.term_tx.subscribe();
-        // Write+ : la petición Oper fue aceptada (si no, error inmediato).
-        self.write_raw(&domain, &item, &oper).await?.into_result()?;
+        // Write+ : la petición Oper fue aceptada. Un Write− de control llega
+        // precedido de un LastApplError con el AddCause (p. ej. 18 =
+        // object-not-selected): se convierte en ControlTerminated.
+        let res = self.write_raw(&domain, &item, &oper).await?.into_result();
+        self.map_control_failure(&item, res)?;
         loop {
             match tokio::time::timeout(params.select_timeout, term_rx.recv()).await {
                 Ok(Ok(ct)) if ct.object_item == item => {
@@ -724,9 +758,22 @@ async fn reader_loop(
                 match pdu::peek_invoke_and_kind(pdu) {
                     Ok((PduKind::Unconfirmed, _)) => {
                         if let Ok(svc) = pdu::parse_unconfirmed(pdu) {
-                            // Una CommandTermination de control va a su propio canal;
+                            // Un LastApplError guarda la causa detallada del último
+                            // fallo de control; una CommandTermination va a su propio
+                            // canal (fusionando el AddCause del LastApplError previo);
                             // el resto son reportes RCB.
-                            if let Some(ct) = report::parse_command_termination(&svc) {
+                            if let Some(lae) = report::parse_last_appl_error(&svc) {
+                                *shared.last_appl_error.lock().unwrap() = Some(lae);
+                            } else if let Some(mut ct) = report::parse_command_termination(&svc) {
+                                if !ct.positive {
+                                    let mut g = shared.last_appl_error.lock().unwrap();
+                                    if let Some(lae) = g.as_ref() {
+                                        if lae.cntrl_obj.ends_with(&ct.object_item) {
+                                            ct.add_cause = Some(lae.add_cause);
+                                            *g = None;
+                                        }
+                                    }
+                                }
                                 let _ = term_tx.send(ct);
                             } else if let Ok(report) = report::decode_information_report(&svc) {
                                 let _ = report_tx.send(report).await;

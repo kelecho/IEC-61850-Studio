@@ -1410,12 +1410,41 @@ struct FileReadState {
 /// Tamaño de bloque que devuelve cada `fileRead`.
 const FILE_READ_CHUNK: usize = 8192;
 
+/// `sboTimeout` por defecto (ms) cuando el CF no lo define o vale 0.
+const DEFAULT_SBO_TIMEOUT_MS: u64 = 30_000;
+
+/// Selección SBO vigente sobre un objeto de control.
+struct Selection {
+    /// Instante en que la selección expira (`sboTimeout` del CF o el defecto).
+    expires: Instant,
+}
+
+/// Salida de un servicio confirmado, en orden de envío: mensajes no solicitados
+/// previos a la respuesta (LastApplError), la respuesta y los posteriores
+/// (reportes, CommandTermination).
+struct ServiceOutput {
+    pre: Vec<Vec<u8>>,
+    resp: Vec<u8>,
+    post: Vec<Vec<u8>>,
+}
+
+impl ServiceOutput {
+    /// Sólo la respuesta, sin mensajes no solicitados.
+    fn only(resp: Vec<u8>) -> Self {
+        Self {
+            pre: Vec::new(),
+            resp,
+            post: Vec::new(),
+        }
+    }
+}
+
 /// Estado de una conexión: RCBs habilitados, selecciones de control, ficheros
 /// abiertos y datasets **dinámicos** creados por el cliente (por conexión).
 #[derive(Default)]
 struct ConnState {
     rcbs: HashMap<(String, String), RcbRuntime>, // (domain, base)
-    selections: HashMap<(String, String), MmsData>,
+    selections: HashMap<(String, String), Selection>,
     files: HashMap<i32, FileReadState>,
     next_frsm: i32,
     /// Datasets dinámicos `(domain, name) -> miembros`, creados con
@@ -1522,12 +1551,15 @@ async fn handle_connection(
                 match pdu::peek_request_kind(pdu)? {
                     PduKind::ConfirmedRequest => {
                         let (invoke, service) = pdu::parse_confirmed_request(pdu)?;
-                        let (resp, reports) = state
+                        let out = state
                             .handle_request(invoke, &service, &model, &store, &change_tx, &buffers)
                             .await;
-                        send_report(&mut writer, &resp).await?;
-                        for rep in reports {
-                            send_report(&mut writer, &rep).await?;
+                        for msg in &out.pre {
+                            send_report(&mut writer, msg).await?;
+                        }
+                        send_report(&mut writer, &out.resp).await?;
+                        for msg in &out.post {
+                            send_report(&mut writer, msg).await?;
                         }
                     }
                     PduKind::ConcludeRequest => {
@@ -1592,8 +1624,10 @@ impl ConnState {
         self.rcbs.values().filter_map(|r| r.next_integrity).min()
     }
 
-    /// Atiende una petición confirmada; devuelve la respuesta y, opcionalmente,
-    /// reportes a enviar inmediatamente (p. ej. tras una GI).
+    /// Atiende una petición confirmada; devuelve la salida ordenada: mensajes
+    /// no solicitados previos (`pre`, p. ej. un LastApplError antes del Write−),
+    /// la respuesta, y los posteriores (`post`, p. ej. reportes tras una GI o
+    /// una CommandTermination tras el Write+).
     async fn handle_request(
         &mut self,
         invoke: u32,
@@ -1602,16 +1636,12 @@ impl ConnState {
         store: &Store,
         change_tx: &broadcast::Sender<ValueChange>,
         buffers: &Buffers,
-    ) -> (Vec<u8>, Vec<Vec<u8>>) {
+    ) -> ServiceOutput {
         let tag = service.tag;
-        let no_reports = Vec::new();
         if tag == pdu::service::IDENTIFY_REQUEST {
-            (
-                pdu::encode_confirmed_response(invoke, |w| {
-                    identify::encode_response(w, model.ident())
-                }),
-                no_reports,
-            )
+            ServiceOutput::only(pdu::encode_confirmed_response(invoke, |w| {
+                identify::encode_response(w, model.ident())
+            }))
         } else if tag == pdu::service::GET_NAME_LIST {
             let resp = match get_name_list::decode_request(service) {
                 Ok(req) => {
@@ -1622,41 +1652,32 @@ impl ConnState {
                 }
                 Err(_) => encode_error(invoke),
             };
-            (resp, no_reports)
+            ServiceOutput::only(resp)
         } else if tag == pdu::service::READ {
-            (
-                self.handle_read(invoke, service, model, store).await,
-                no_reports,
-            )
+            ServiceOutput::only(self.handle_read(invoke, service, model, store).await)
         } else if tag == pdu::service::GET_VARIABLE_ACCESS_ATTRIBUTES {
-            (
-                handle_get_var_attr(invoke, service, model, store).await,
-                no_reports,
-            )
+            ServiceOutput::only(handle_get_var_attr(invoke, service, model, store).await)
         } else if tag == pdu::service::FILE_DIRECTORY {
-            (handle_file_directory(invoke, service, model), no_reports)
+            ServiceOutput::only(handle_file_directory(invoke, service, model))
         } else if tag == pdu::service::FILE_OPEN {
-            (self.handle_file_open(invoke, service, model), no_reports)
+            ServiceOutput::only(self.handle_file_open(invoke, service, model))
         } else if tag == pdu::service::FILE_READ {
-            (self.handle_file_read(invoke, service), no_reports)
+            ServiceOutput::only(self.handle_file_read(invoke, service))
         } else if tag == pdu::service::FILE_CLOSE {
-            (self.handle_file_close(invoke, service), no_reports)
+            ServiceOutput::only(self.handle_file_close(invoke, service))
         } else if tag == pdu::service::WRITE {
             self.handle_write(invoke, service, model, store, change_tx, buffers)
                 .await
         } else if tag == pdu::service::DEFINE_NAMED_VARIABLE_LIST {
-            (self.handle_define_dataset(invoke, service), no_reports)
+            ServiceOutput::only(self.handle_define_dataset(invoke, service))
         } else if tag == pdu::service::DELETE_NAMED_VARIABLE_LIST {
-            (self.handle_delete_dataset(invoke, service), no_reports)
+            ServiceOutput::only(self.handle_delete_dataset(invoke, service))
         } else if tag == pdu::service::GET_NAMED_VARIABLE_LIST_ATTRIBUTES {
-            (
-                self.handle_get_dataset_attrs(invoke, service, model),
-                no_reports,
-            )
+            ServiceOutput::only(self.handle_get_dataset_attrs(invoke, service, model))
         } else if tag == pdu::service::READ_JOURNAL {
-            (handle_read_journal(invoke, service, model), no_reports)
+            ServiceOutput::only(handle_read_journal(invoke, service, model))
         } else {
-            (encode_error(invoke), no_reports)
+            ServiceOutput::only(encode_error(invoke))
         }
     }
 
@@ -1825,10 +1846,20 @@ impl ConnState {
                 if !self.role.may_read(i) {
                     return AccessResult::Failure(DataAccessError::ObjectAccessDenied);
                 }
-                // Select-before-operate: leer $SBO concede el control.
+                // Select-before-operate: leer $SBO concede el control sólo si el
+                // ctlModel es SBO (2/4); si no, cadena vacía = selección denegada.
                 if let Some(base) = i.strip_suffix("$SBO") {
-                    self.selections
-                        .insert((d.clone(), base.to_string()), MmsData::Visible(i.clone()));
+                    let kind = ctl_model_of(&guard, d, base);
+                    if kind != 2 && kind != 4 {
+                        return AccessResult::Success(MmsData::Visible(String::new()));
+                    }
+                    let timeout = sbo_timeout_of(&guard, d, base);
+                    self.selections.insert(
+                        (d.clone(), base.to_string()),
+                        Selection {
+                            expires: Instant::now() + timeout,
+                        },
+                    );
                     return AccessResult::Success(MmsData::Visible(i.clone()));
                 }
                 // Normaliza el sufijo de instancia MMS ("01") que añaden clientes
@@ -1885,11 +1916,14 @@ impl ConnState {
         store: &Store,
         change_tx: &broadcast::Sender<ValueChange>,
         buffers: &Buffers,
-    ) -> (Vec<u8>, Vec<Vec<u8>>) {
+    ) -> ServiceOutput {
         let Ok((vars, data)) = write::decode_request(service) else {
-            return (encode_error(invoke), Vec::new());
+            return ServiceOutput::only(encode_error(invoke));
         };
         let mut results = Vec::with_capacity(vars.len());
+        // `pre` va antes de la respuesta (LastApplError de un Write− de control);
+        // `reports` después (reportes RCB, CommandTermination).
+        let mut pre = Vec::new();
         let mut reports = Vec::new();
 
         for (k, (domain, item)) in vars.iter().enumerate() {
@@ -1940,11 +1974,15 @@ impl ConnState {
                 }
                 store_write(store, change_tx, domain, item, value).await
             } else if item.contains("$CO$") && item.ends_with("$Oper") {
-                let (r, term) = self
+                let (r, unsolicited) = self
                     .operate(domain, item, &value, model, store, change_tx)
                     .await;
-                if let Some(t) = term {
-                    reports.push(t);
+                // Write− ⇒ el LastApplError lo precede; Write+ ⇒ la
+                // CommandTermination (y su LastApplError si es negativa) lo sigue.
+                if matches!(r, WriteResult::Failure(_)) {
+                    pre.extend(unsolicited);
+                } else {
+                    reports.extend(unsolicited);
                 }
                 r
             } else if item.contains("$CO$") && item.ends_with("$Cancel") {
@@ -1953,9 +1991,30 @@ impl ConnState {
                 }
                 WriteResult::Success
             } else if let Some(base) = item.strip_suffix("$SBOw") {
-                self.selections
-                    .insert((domain.clone(), base.to_string()), value);
-                WriteResult::Success
+                // SelectWithValue: sólo modelos SBO (2/4); registra la selección
+                // con su expiración (sboTimeout del CF o el defecto).
+                let g = store.read().await;
+                let kind = ctl_model_of(&g, domain, base);
+                if kind == 2 || kind == 4 {
+                    let timeout = sbo_timeout_of(&g, domain, base);
+                    drop(g);
+                    self.selections.insert(
+                        (domain.clone(), base.to_string()),
+                        Selection {
+                            expires: Instant::now() + timeout,
+                        },
+                    );
+                    WriteResult::Success
+                } else {
+                    drop(g);
+                    pre.push(last_appl_error_for(
+                        domain,
+                        item,
+                        &value,
+                        crate::control::add_cause::NOT_SUPPORTED,
+                    ));
+                    WriteResult::Failure(DataAccessError::ObjectAccessDenied)
+                }
             } else if let Some(sgw) = model.classify_sg_write(domain, item) {
                 // Grupos de ajuste: SelectActiveSG/SelectEditSG (rango),
                 // ConfirmEditSGValues, o escritura de un valor FC=SE/SG.
@@ -1967,10 +2026,11 @@ impl ConnState {
             };
             results.push(result);
         }
-        (
-            pdu::encode_confirmed_response(invoke, |w| write::encode_response(w, &results)),
-            reports,
-        )
+        ServiceOutput {
+            pre,
+            resp: pdu::encode_confirmed_response(invoke, |w| write::encode_response(w, &results)),
+            post: reports,
+        }
     }
 
     /// Habilita/deshabilita un RCB al escribir `RptEna`.
@@ -2180,9 +2240,10 @@ impl ConnState {
         Some(make_report(rcb, &all_included(rcb.members.len()), &values))
     }
 
-    /// Ejecuta un control directo: aplica `ctlVal` al estado `stVal`.
-    /// Ejecuta un `Oper`. Devuelve la respuesta Write y, en seguridad reforzada,
-    /// la CommandTermination a enviar tras ella.
+    /// Ejecuta un `Oper` según el `ctlModel` del objeto (IEC 61850-7-2):
+    /// 0 = status-only (no operable), 1 = direct-normal, 2 = sbo-normal,
+    /// 3 = direct-enhanced, 4 = sbo-enhanced. Devuelve la respuesta Write y los
+    /// informes no solicitados a emitir (LastApplError y/o CommandTermination).
     async fn operate(
         &mut self,
         domain: &str,
@@ -2191,7 +2252,9 @@ impl ConnState {
         model: &ServerModel,
         store: &Store,
         change_tx: &broadcast::Sender<ValueChange>,
-    ) -> (WriteResult, Option<Vec<u8>>) {
+    ) -> (WriteResult, Vec<Vec<u8>>) {
+        use crate::control::add_cause;
+
         // Oper es una estructura { ctlVal, origin, ctlNum, T, Test, Check }.
         let (ctl_val, interlock_check) = match value {
             MmsData::Structure(fields) if !fields.is_empty() => {
@@ -2210,61 +2273,88 @@ impl ConnState {
         if !model.contains(domain, &status_item) {
             return (
                 WriteResult::Failure(DataAccessError::ObjectNonExistent),
-                None,
+                Vec::new(),
             );
         }
 
-        // Modelo de control (ctlModel en CF): 3 = direct-enhanced, 4 = sbo-enhanced.
-        let parts: Vec<&str> = oper_item.split('$').collect();
-        let (ln, doi) = (parts[0], parts.get(2).copied().unwrap_or(""));
-        let cf = |attr: &str| format!("{ln}$CF${doi}${attr}");
         let co_base = oper_item.trim_end_matches("$Oper").to_string();
-        let model_kind = {
+        let (model_kind, blocked) = {
             let g = store.read().await;
-            match g.get(&(domain.to_string(), cf("ctlModel"))) {
-                Some(MmsData::Int(n)) => *n,
-                Some(MmsData::Uint(n)) => *n as i64,
-                _ => 0,
-            }
+            let kind = ctl_model_of(&g, domain, &co_base);
+            let blk = interlock_check
+                && cf_of_co(&co_base, "intlckBlk")
+                    .map(|cf| matches!(g.get(&(domain.to_string(), cf)), Some(MmsData::Bool(true))))
+                    .unwrap_or(false);
+            (kind, blk)
         };
         let enhanced = model_kind == 3 || model_kind == 4;
         let sbo = model_kind == 2 || model_kind == 4;
 
-        // SBO: exige selección previa.
-        if sbo
-            && !self
-                .selections
-                .contains_key(&(domain.to_string(), co_base.clone()))
-        {
+        // status-only (o ctlModel desconocido): el objeto no es operable.
+        if !(1..=4).contains(&model_kind) {
+            let lae = last_appl_error_for(domain, oper_item, value, add_cause::NOT_SUPPORTED);
             return (
                 WriteResult::Failure(DataAccessError::ObjectAccessDenied),
-                None,
+                vec![lae],
             );
         }
-        // El comando consume la selección (one-shot).
-        self.selections.remove(&(domain.to_string(), co_base));
 
-        if !enhanced {
-            apply_value(store, change_tx, domain.to_string(), status_item, ctl_val).await;
-            return (WriteResult::Success, None);
+        // SBO: exige selección previa vigente (no expirada por sboTimeout).
+        if sbo {
+            let key = (domain.to_string(), co_base.clone());
+            let now = Instant::now();
+            let cause = match self.selections.get(&key) {
+                None => Some(add_cause::OBJECT_NOT_SELECTED),
+                Some(sel) if now >= sel.expires => Some(add_cause::TIME_LIMIT_OVER),
+                Some(_) => None,
+            };
+            if let Some(cause) = cause {
+                self.selections.remove(&key);
+                let lae = last_appl_error_for(domain, oper_item, value, cause);
+                return (
+                    WriteResult::Failure(DataAccessError::ObjectAccessDenied),
+                    vec![lae],
+                );
+            }
+            // El comando consume la selección (one-shot).
+            self.selections.remove(&key);
         }
 
-        // Enhanced: responder Write+ y enviar CommandTermination (positiva/negativa).
-        let blocked = interlock_check && {
-            let g = store.read().await;
-            matches!(
-                g.get(&(domain.to_string(), cf("intlckBlk"))),
-                Some(MmsData::Bool(true))
-            )
-        };
+        if !enhanced {
+            if blocked {
+                // Normal security: Write− con la causa en un LastApplError.
+                let lae = last_appl_error_for(
+                    domain,
+                    oper_item,
+                    value,
+                    add_cause::BLOCKED_BY_INTERLOCKING,
+                );
+                return (
+                    WriteResult::Failure(DataAccessError::ObjectAccessDenied),
+                    vec![lae],
+                );
+            }
+            apply_value(store, change_tx, domain.to_string(), status_item, ctl_val).await;
+            return (WriteResult::Success, Vec::new());
+        }
+
+        // Enhanced: Write+ y luego CommandTermination (positiva/negativa). La
+        // negativa va precedida del LastApplError con el AddCause (patrón 8-1).
         if blocked {
-            // AddCause 1 = blocked-by-interlocking. No cambia el estado.
-            let term = report::encode_command_termination(domain, oper_item, value, false, 1);
-            return (WriteResult::Success, Some(term));
+            let lae =
+                last_appl_error_for(domain, oper_item, value, add_cause::BLOCKED_BY_INTERLOCKING);
+            let term = report::encode_command_termination(
+                domain,
+                oper_item,
+                value,
+                false,
+                DataAccessError::TemporarilyUnavailable.to_code(),
+            );
+            return (WriteResult::Success, vec![lae, term]);
         }
         apply_value(store, change_tx, domain.to_string(), status_item, ctl_val).await;
         let term = report::encode_command_termination(domain, oper_item, value, true, 0);
-        (WriteResult::Success, Some(term))
+        (WriteResult::Success, vec![term])
     }
 
     /// Reportes a emitir ante un cambio de valor (disparo por dchg).
@@ -2314,6 +2404,83 @@ impl ConnState {
         }
         out
     }
+}
+
+/// Item CF de un atributo del DO de control: `"LN$CO$<do>" + attr` →
+/// `"LN$CF$<do>$attr"`. Devuelve `None` si la base no tiene forma `LN$CO$DO`.
+fn cf_of_co(co_base: &str, attr: &str) -> Option<String> {
+    let mut parts = co_base.split('$');
+    let ln = parts.next()?;
+    if parts.next()? != "CO" {
+        return None;
+    }
+    let doi = parts.next()?;
+    Some(format!("{ln}$CF${doi}${attr}"))
+}
+
+/// `ctlModel` del objeto de control (0 = status-only si no está definido).
+fn ctl_model_of(guard: &HashMap<(String, String), MmsData>, domain: &str, co_base: &str) -> i64 {
+    cf_of_co(co_base, "ctlModel")
+        .and_then(|cf| guard.get(&(domain.to_string(), cf)).cloned())
+        .map_or(0, |v| match v {
+            MmsData::Int(n) => n,
+            MmsData::Uint(n) => n as i64,
+            _ => 0,
+        })
+}
+
+/// `sboTimeout` del CF (ms); ausente o 0 → [`DEFAULT_SBO_TIMEOUT_MS`].
+fn sbo_timeout_of(
+    guard: &HashMap<(String, String), MmsData>,
+    domain: &str,
+    co_base: &str,
+) -> Duration {
+    let ms = cf_of_co(co_base, "sboTimeout")
+        .and_then(|cf| guard.get(&(domain.to_string(), cf)).cloned())
+        .map_or(0, |v| match v {
+            MmsData::Int(n) => n.max(0) as u64,
+            MmsData::Uint(n) => n,
+            _ => 0,
+        });
+    Duration::from_millis(if ms == 0 { DEFAULT_SBO_TIMEOUT_MS } else { ms })
+}
+
+/// `LastApplError` de un comando de control rechazado: refleja origin/ctlNum
+/// del `Oper` recibido y lleva el `AddCause` de la causa real.
+fn last_appl_error_for(domain: &str, oper_item: &str, oper: &MmsData, cause: i64) -> Vec<u8> {
+    let (or_cat, or_ident, ctl_num) = match oper {
+        MmsData::Structure(f) => {
+            let (cat, ident) = match f.get(1) {
+                Some(MmsData::Structure(o)) => (
+                    match o.first() {
+                        Some(MmsData::Int(n)) => *n,
+                        Some(MmsData::Uint(n)) => *n as i64,
+                        _ => 0,
+                    },
+                    match o.get(1) {
+                        Some(MmsData::Octets(b)) => b.clone(),
+                        _ => Vec::new(),
+                    },
+                ),
+                _ => (0, Vec::new()),
+            };
+            let num = match f.get(2) {
+                Some(MmsData::Uint(n)) => *n,
+                Some(MmsData::Int(n)) => *n as u64,
+                _ => 0,
+            };
+            (cat, ident, num)
+        }
+        _ => (0, Vec::new(), 0),
+    };
+    report::encode_last_appl_error(&report::LastApplError {
+        cntrl_obj: format!("{domain}/{oper_item}"),
+        error: 1, // error-unknown
+        or_cat,
+        or_ident,
+        ctl_num,
+        add_cause: cause,
+    })
 }
 
 fn all_included(n: usize) -> BitString {

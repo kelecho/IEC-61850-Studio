@@ -165,19 +165,22 @@ pub struct CommandTermination {
     pub object_item: String,
     /// `true` = positiva (comando completado), `false` = negativa.
     pub positive: bool,
-    /// AddCause (sólo en la negativa).
+    /// AddCause (IEC 61850-7-2). En el hilo el rellena el cliente a partir del
+    /// `LastApplError` que precede a la terminación negativa; el `failure` de la
+    /// propia CommandTermination lleva un `DataAccessError`, no un AddCause.
     pub add_cause: Option<i64>,
 }
 
 /// Codifica una CommandTermination como `unconfirmed-PDU [3] { informationReport
 /// [0] { variableAccessSpecification(listOfVariable con el Oper), listOfAccessResult } }`.
-/// La positiva lleva la estructura `oper` reflejada; la negativa, el AddCause.
+/// La positiva lleva la estructura `oper` reflejada; la negativa, un `failure`
+/// con un `DataAccessError` (el AddCause va en el [`LastApplError`] previo).
 pub fn encode_command_termination(
     domain: &str,
     object_item: &str,
     oper: &MmsData,
     positive: bool,
-    add_cause: i64,
+    failure_code: i64,
 ) -> Vec<u8> {
     use crate::ber::tag::{Tag, universal};
     use crate::ber::writer::BerWriter;
@@ -203,8 +206,8 @@ pub fn encode_command_termination(
                 if positive {
                     oper.encode(w);
                 } else {
-                    // failure [0] = AddCause
-                    w.integer(Tag::context(0, false), add_cause);
+                    // failure [0] = DataAccessError
+                    w.integer(Tag::context(0, false), failure_code);
                 }
             });
         });
@@ -236,15 +239,154 @@ pub fn parse_command_termination(service_tlv: &Tlv<'_>) -> Option<CommandTermina
     }
     let mut ar = BerReader::new(results.content);
     let res = ar.read_tlv().ok()?;
-    let (positive, add_cause) = if res.tag == Tag::context(0, false) {
-        (false, crate::ber::prim::decode_integer(res.content).ok())
-    } else {
-        (true, None)
-    };
+    // failure [0] ⇒ negativa. Su entero es un DataAccessError; el AddCause real
+    // llega en el LastApplError previo (lo correlaciona el cliente).
+    let positive = res.tag != Tag::context(0, false);
     Some(CommandTermination {
         domain,
         object_item,
         positive,
+        add_cause: None,
+    })
+}
+
+/// `LastApplError` (IEC 61850-8-1): informe no solicitado que detalla la causa
+/// del último fallo de aplicación de un servicio de control. Lo emite el
+/// servidor justo antes de un Write− de control o de una CommandTermination
+/// negativa; es donde viaja el `AddCause` del 7-2.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LastApplError {
+    /// Referencia del objeto de control, p. ej. `"IED1LD0/GGIO1$CO$SPCSO2$Oper"`.
+    pub cntrl_obj: String,
+    /// Código de error (0 = no-error, 1 = unknown, 2 = timeout-test-not-ok,
+    /// 3 = operator-test-not-ok).
+    pub error: i64,
+    /// Categoría del originador (`orCat`) del comando que falló.
+    pub or_cat: i64,
+    /// Identificador del originador (`orIdent`).
+    pub or_ident: Vec<u8>,
+    /// `ctlNum` del comando que falló.
+    pub ctl_num: u64,
+    /// Causa adicional (IEC 61850-7-2, ver [`crate::control::add_cause`]).
+    pub add_cause: i64,
+}
+
+/// Codifica un `LastApplError` como informationReport con nombre de variable
+/// **vmd-specific** `"LastApplError"` y una estructura de 5 componentes
+/// `{ CntrlObj, Error, Origin{orCat, orIdent}, ctlNum, AddCause }` (el layout
+/// que emite y espera libiec61850).
+pub fn encode_last_appl_error(e: &LastApplError) -> Vec<u8> {
+    use crate::ber::tag::Tag;
+    use crate::ber::writer::BerWriter;
+    use crate::mms::pdu::mmspdu::UNCONFIRMED;
+    use crate::mms::pdu::unconfirmed_service::INFORMATION_REPORT;
+
+    let mut w = BerWriter::new();
+    w.tlv(UNCONFIRMED, |w| {
+        w.tlv(INFORMATION_REPORT, |w| {
+            // variableAccessSpecification: listOfVariable [0] →
+            //   SEQUENCE { name [0] → vmd-specific [0] "LastApplError" }
+            w.tlv(Tag::context(0, true), |w| {
+                w.sequence(|w| {
+                    w.tlv(Tag::context(0, true), |w| {
+                        w.visible_string(Tag::context(0, false), "LastApplError");
+                    });
+                });
+            });
+            // listOfAccessResult [0] con la estructura de 5 componentes.
+            w.tlv(Tag::context(0, true), |w| {
+                MmsData::Structure(vec![
+                    MmsData::Visible(e.cntrl_obj.clone()),
+                    MmsData::Int(e.error),
+                    MmsData::Structure(vec![
+                        MmsData::Int(e.or_cat),
+                        MmsData::Octets(e.or_ident.clone()),
+                    ]),
+                    MmsData::Uint(e.ctl_num),
+                    MmsData::Int(e.add_cause),
+                ])
+                .encode(w);
+            });
+        });
+    });
+    w.into_bytes()
+}
+
+/// Intenta interpretar un `informationReport [0]` como `LastApplError`.
+/// Devuelve `None` si el nombre de variable no es el vmd-specific
+/// `"LastApplError"` o la estructura no tiene el layout esperado.
+pub fn parse_last_appl_error(service_tlv: &Tlv<'_>) -> Option<LastApplError> {
+    use crate::ber::tag::Tag;
+    use crate::mms::pdu::unconfirmed_service::INFORMATION_REPORT;
+    if service_tlv.tag != INFORMATION_REPORT {
+        return None;
+    }
+    let mut r = BerReader::new(service_tlv.content);
+    let first = r.read_tlv().ok()?;
+    if r.is_empty() {
+        return None; // reporte RCB (sólo listOfAccessResult)
+    }
+    let results = r.read_tlv().ok()?;
+    // listOfVariable [0] { SEQUENCE { name [0] { vmd-specific [0] } } }
+    if first.tag != Tag::context(0, true) {
+        return None;
+    }
+    let seq = BerReader::new(first.content).read_tlv().ok()?;
+    let name = BerReader::new(seq.content).read_tlv().ok()?;
+    if name.tag != Tag::context(0, true) {
+        return None;
+    }
+    let vmd = BerReader::new(name.content).read_tlv().ok()?;
+    if vmd.tag != Tag::context(0, false) || vmd.content != b"LastApplError" {
+        return None;
+    }
+    // AccessResult: estructura { CntrlObj, Error, Origin, ctlNum, AddCause }.
+    let res = BerReader::new(results.content).read_tlv().ok()?;
+    let MmsData::Structure(fields) = MmsData::decode(&res).ok()? else {
+        return None;
+    };
+    let mut it = fields.into_iter();
+    let cntrl_obj = match it.next()? {
+        MmsData::Visible(s) => s,
+        _ => return None,
+    };
+    let error = match it.next()? {
+        MmsData::Int(n) => n,
+        MmsData::Uint(n) => n as i64,
+        _ => return None,
+    };
+    let (or_cat, or_ident) = match it.next()? {
+        MmsData::Structure(o) => {
+            let mut o = o.into_iter();
+            let cat = match o.next() {
+                Some(MmsData::Int(n)) => n,
+                Some(MmsData::Uint(n)) => n as i64,
+                _ => 0,
+            };
+            let ident = match o.next() {
+                Some(MmsData::Octets(b)) => b,
+                _ => Vec::new(),
+            };
+            (cat, ident)
+        }
+        _ => return None,
+    };
+    let ctl_num = match it.next()? {
+        MmsData::Uint(n) => n,
+        MmsData::Int(n) => n as u64,
+        _ => return None,
+    };
+    let add_cause = match it.next()? {
+        MmsData::Int(n) => n,
+        MmsData::Uint(n) => n as i64,
+        _ => return None,
+    };
+    Some(LastApplError {
+        cntrl_obj,
+        error,
+        or_cat,
+        or_ident,
+        ctl_num,
         add_cause,
     })
 }
@@ -588,12 +730,13 @@ mod tests {
         assert!(ct.positive);
         assert_eq!(ct.add_cause, None);
 
-        // Negativa con AddCause.
-        let bytes = encode_command_termination("IED1LD0", "GGIO1$CO$SPCSO2$Oper", &oper, false, 1);
+        // Negativa: el failure lleva un DataAccessError; el AddCause viene del
+        // LastApplError previo (lo fusiona el cliente), aquí queda None.
+        let bytes = encode_command_termination("IED1LD0", "GGIO1$CO$SPCSO2$Oper", &oper, false, 2);
         let svc = crate::mms::pdu::parse_unconfirmed(&bytes).unwrap();
         let ct = parse_command_termination(&svc).unwrap();
         assert!(!ct.positive);
-        assert_eq!(ct.add_cause, Some(1));
+        assert_eq!(ct.add_cause, None);
 
         // Un reporte RCB normal NO es CommandTermination.
         let opt = BitString::from_bits(&[false; 10]);
@@ -612,6 +755,30 @@ mod tests {
             reasons: None,
         });
         let svc = crate::mms::pdu::parse_unconfirmed(&rcb_bytes).unwrap();
+        assert!(parse_command_termination(&svc).is_none());
+    }
+
+    #[test]
+    fn last_appl_error_round_trip() {
+        let lae = LastApplError {
+            cntrl_obj: "IED1LD0/GGIO1$CO$SPCSO2$Oper".into(),
+            error: 1,
+            or_cat: 2,
+            or_ident: b"tester".to_vec(),
+            ctl_num: 7,
+            add_cause: 18, // object-not-selected
+        };
+        let bytes = encode_last_appl_error(&lae);
+        let svc = crate::mms::pdu::parse_unconfirmed(&bytes).unwrap();
+        let parsed = parse_last_appl_error(&svc).expect("es LastApplError");
+        assert_eq!(parsed, lae);
+
+        // Una CommandTermination no se confunde con él, ni viceversa.
+        let oper = MmsData::Structure(vec![MmsData::Bool(true)]);
+        let ct = encode_command_termination("D", "GGIO1$CO$SPCSO2$Oper", &oper, true, 0);
+        let svc = crate::mms::pdu::parse_unconfirmed(&ct).unwrap();
+        assert!(parse_last_appl_error(&svc).is_none());
+        let svc = crate::mms::pdu::parse_unconfirmed(&bytes).unwrap();
         assert!(parse_command_termination(&svc).is_none());
     }
 

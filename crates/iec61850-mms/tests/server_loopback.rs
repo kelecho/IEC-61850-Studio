@@ -582,8 +582,96 @@ async fn control_operate_and_select() {
     client.operate(&do_ctrl, MmsData::Bool(true)).await.unwrap();
     assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(true));
 
-    // Select-before-operate: el servidor concede la selección.
-    assert!(client.select(&do_ctrl).await.unwrap());
+    // Select sobre un objeto direct-normal ⇒ denegado (no es modelo SBO).
+    assert!(!client.select(&do_ctrl).await.unwrap());
+}
+
+#[tokio::test]
+async fn control_sbo_normal_flow() {
+    let (addr, _handle) = start_server(100).await;
+    let client = MmsClient::connect(addr).await.unwrap();
+
+    // SPCSO3 = sbo-with-normal-security (ctlModel=2).
+    let do3 = "IED1LD0/GGIO1.SPCSO3[CO]".parse().unwrap();
+    let stval = "IED1LD0/GGIO1.SPCSO3.stVal[ST]".parse().unwrap();
+
+    // Operar sin seleccionar ⇒ rechazo con AddCause 18 (object-not-selected).
+    let err = client.operate(&do3, MmsData::Bool(true)).await.unwrap_err();
+    assert!(matches!(
+        err,
+        MmsError::ControlTerminated {
+            add_cause: iec61850_mms::add_cause::OBJECT_NOT_SELECTED
+        }
+    ));
+
+    // Select (lectura de SBO) concedido; después el operate pasa.
+    assert!(client.select(&do3).await.unwrap());
+    client.operate(&do3, MmsData::Bool(true)).await.unwrap();
+    assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(true));
+
+    // La selección es one-shot: un segundo operate vuelve a denegarse.
+    let err = client
+        .operate(&do3, MmsData::Bool(false))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        MmsError::ControlTerminated {
+            add_cause: iec61850_mms::add_cause::OBJECT_NOT_SELECTED
+        }
+    ));
+}
+
+#[tokio::test]
+async fn control_sbo_selection_expires() {
+    let (addr, handle) = start_server(100).await;
+    let client = MmsClient::connect(addr).await.unwrap();
+    let do3 = "IED1LD0/GGIO1.SPCSO3[CO]".parse().unwrap();
+
+    // sboTimeout de 50 ms en el CF del objeto.
+    handle
+        .set_raw("IED1LD0", "GGIO1$CF$SPCSO3$sboTimeout", MmsData::Uint(50))
+        .await;
+
+    assert!(client.select(&do3).await.unwrap());
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+    // La selección expiró (AddCause 16 = time-limit-over en el LastApplError).
+    let err = client.operate(&do3, MmsData::Bool(true)).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MmsError::ControlTerminated {
+                add_cause: iec61850_mms::add_cause::TIME_LIMIT_OVER
+            }
+        ),
+        "se esperaba time-limit-over, fue {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn control_status_only_rejects_operate() {
+    let (addr, _handle) = start_server(100).await;
+    let client = MmsClient::connect(addr).await.unwrap();
+
+    // SPCSO4 = status-only (ctlModel=0): no operable.
+    let do4 = "IED1LD0/GGIO1.SPCSO4[CO]".parse().unwrap();
+    let stval = "IED1LD0/GGIO1.SPCSO4.stVal[ST]".parse().unwrap();
+
+    let err = client.operate(&do4, MmsData::Bool(true)).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MmsError::ControlTerminated {
+                add_cause: iec61850_mms::add_cause::NOT_SUPPORTED
+            }
+        ),
+        "se esperaba not-supported, fue {err:?}"
+    );
+    assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(false));
+
+    // Tampoco se puede seleccionar.
+    assert!(!client.select(&do4).await.unwrap());
 }
 
 fn entry_id_of(report: &iec61850_mms::Report) -> u64 {
@@ -719,7 +807,8 @@ async fn enhanced_operate_interlock_blocked() {
         .set_raw("IED1LD0", "GGIO1$CF$SPCSO2$intlckBlk", MmsData::Bool(true))
         .await;
 
-    // Oper con interlock-check ⇒ CommandTermination− (AddCause 1), sin cambio.
+    // Oper con interlock-check ⇒ LastApplError + CommandTermination−
+    // (AddCause 10 = blocked-by-interlocking, IEC 61850-7-2), sin cambio.
     let p = ControlParameters {
         check: [true, false],
         ..Default::default()
@@ -732,8 +821,40 @@ async fn enhanced_operate_interlock_blocked() {
         .operate_enhanced(&do2, MmsData::Bool(true), &p)
         .await
         .unwrap_err();
-    assert!(matches!(err, MmsError::ControlTerminated { add_cause: 1 }));
+    assert!(
+        matches!(
+            err,
+            MmsError::ControlTerminated {
+                add_cause: iec61850_mms::add_cause::BLOCKED_BY_INTERLOCKING
+            }
+        ),
+        "se esperaba blocked-by-interlocking, fue {err:?}"
+    );
     assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(false));
+}
+
+#[tokio::test]
+async fn enhanced_operate_without_select_rejected() {
+    let (addr, _handle) = start_server(100).await;
+    let client = MmsClient::connect(addr).await.unwrap();
+    let do2 = "IED1LD0/GGIO1.SPCSO2[CO]".parse().unwrap();
+    let p = ControlParameters::default();
+
+    // sbo-enhanced sin selección previa ⇒ Write− precedido de LastApplError
+    // con AddCause 18 (object-not-selected).
+    let err = client
+        .operate_enhanced(&do2, MmsData::Bool(true), &p)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MmsError::ControlTerminated {
+                add_cause: iec61850_mms::add_cause::OBJECT_NOT_SELECTED
+            }
+        ),
+        "se esperaba object-not-selected, fue {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -749,12 +870,20 @@ async fn enhanced_cancel_deselects() {
         .unwrap();
     client.cancel(&do2, &p).await.unwrap();
 
-    // Tras Cancel ya no hay selección: operar (sbo) ⇒ acceso denegado.
+    // Tras Cancel ya no hay selección: operar (sbo) ⇒ rechazo con AddCause 18.
     let err = client
         .operate_enhanced(&do2, MmsData::Bool(true), &p)
         .await
         .unwrap_err();
-    assert!(matches!(err, MmsError::DataAccess(_)));
+    assert!(
+        matches!(
+            err,
+            MmsError::ControlTerminated {
+                add_cause: iec61850_mms::add_cause::OBJECT_NOT_SELECTED
+            }
+        ),
+        "se esperaba object-not-selected, fue {err:?}"
+    );
 }
 
 #[tokio::test]

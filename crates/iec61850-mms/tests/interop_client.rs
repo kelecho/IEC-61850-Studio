@@ -420,12 +420,13 @@ async fn interop_file_transfer() {
     let addr = addr_or_skip!();
     let client = MmsClient::connect(&addr).await.expect("asocia");
 
-    // Lista el directorio raíz del filestore.
+    // Lista el directorio raíz del filestore. Un reject-PDU aquí es
+    // "unrecognized-service": libiec61850 compilado SIN file services (p. ej.
+    // server_example_basic_io); la conformidad estructural de fileDirectory se
+    // verificó contra server_example_files y queda cubierta por los guardianes
+    // de bytes de `mms/file.rs`.
     let dir = match client.file_directory(None, None).await {
         Ok(d) => d,
-        Err(iec61850_mms::MmsError::ServiceReject(r)) => {
-            panic!("fileDirectory produjo reject-PDU (estructura no conforme): {r}")
-        }
         Err(e) => {
             eprintln!("file service no disponible ({e}): subtest omitido");
             return;
@@ -675,5 +676,201 @@ async fn interop_setting_groups() {
             panic!("SelectActiveSG produjo reject-PDU: {r}")
         }
         Err(e) => eprintln!("SelectActiveSG rechazado (aceptable según permisos): {e}"),
+    }
+}
+
+// --- Modelos de control del 7-2 contra `server_example_control` -------------
+//
+// El servidor de control de libiec61850 expone GGIO1.SPCSO1..4 con los cuatro
+// modelos operables: 1 = direct-normal, 2 = sbo-normal, 3 = direct-enhanced,
+// 4 = sbo-enhanced. Se levanta con el servicio `libiec61850-control` del
+// docker-compose del banco y se apunta con IEC61850_INTEROP_CONTROL_ADDR
+// (p. ej. 127.0.0.1:10103).
+
+fn control_addr() -> Option<String> {
+    std::env::var("IEC61850_INTEROP_CONTROL_ADDR").ok()
+}
+
+macro_rules! control_addr_or_skip {
+    () => {
+        match control_addr() {
+            Some(a) => a,
+            None => {
+                eprintln!("IEC61850_INTEROP_CONTROL_ADDR no definida: test omitido");
+                return;
+            }
+        }
+    };
+}
+
+/// Lee el `ctlModel` (CF) de un SPCSO del servidor de control.
+async fn read_ctl_model(client: &MmsClient, spcso: &str) -> i64 {
+    let r: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}.ctlModel[CF]")
+        .parse()
+        .expect("ref ctlModel");
+    match client.read(&r).await.expect("read ctlModel") {
+        iec61850_mms::MmsData::Int(n) => n,
+        iec61850_mms::MmsData::Uint(n) => n as i64,
+        other => panic!("ctlModel debe ser entero, fue {other:?}"),
+    }
+}
+
+/// Los cuatro SPCSO del servidor de control cubren los cuatro modelos operables.
+#[tokio::test]
+async fn interop_control_models_advertised() {
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let mut models = Vec::new();
+    for spcso in ["SPCSO1", "SPCSO2", "SPCSO3", "SPCSO4"] {
+        models.push(read_ctl_model(&client, spcso).await);
+    }
+    eprintln!("ctlModel SPCSO1..4 = {models:?}");
+    // El ejemplo de libiec61850 los define como 1..4; toleramos otro orden pero
+    // exigimos que los cuatro modelos operables estén presentes.
+    let mut sorted = models.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        sorted,
+        vec![1, 2, 3, 4],
+        "faltan modelos de control: {models:?}"
+    );
+}
+
+/// direct-with-normal-security: Oper aceptado y stVal refleja el mando.
+#[tokio::test]
+async fn interop_control_direct_normal() {
+    use iec61850_mms::MmsData;
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let spcso = "SPCSO1";
+    assert_eq!(
+        read_ctl_model(&client, spcso).await,
+        1,
+        "SPCSO1 debe ser direct-normal"
+    );
+
+    let ctl: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}").parse().unwrap();
+    let stval: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}.stVal[ST]")
+        .parse()
+        .unwrap();
+    client
+        .operate(&ctl, MmsData::Bool(true))
+        .await
+        .expect("operate direct");
+    assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(true));
+    client
+        .operate(&ctl, MmsData::Bool(false))
+        .await
+        .expect("operate off");
+}
+
+/// sbo-with-normal-security: select (lectura de SBO) y operate.
+#[tokio::test]
+async fn interop_control_sbo_normal() {
+    use iec61850_mms::MmsData;
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let spcso = "SPCSO2";
+    assert_eq!(
+        read_ctl_model(&client, spcso).await,
+        2,
+        "SPCSO2 debe ser sbo-normal"
+    );
+
+    let ctl: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}").parse().unwrap();
+    let stval: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}.stVal[ST]")
+        .parse()
+        .unwrap();
+    assert!(
+        client.select(&ctl).await.expect("select"),
+        "el select debe concederse"
+    );
+    client
+        .operate(&ctl, MmsData::Bool(true))
+        .await
+        .expect("operate tras select");
+    assert_eq!(client.read(&stval).await.unwrap(), MmsData::Bool(true));
+}
+
+/// direct-with-enhanced-security: Oper + CommandTermination positiva.
+#[tokio::test]
+async fn interop_control_direct_enhanced() {
+    use iec61850_mms::{ControlParameters, MmsData};
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let spcso = "SPCSO3";
+    assert_eq!(
+        read_ctl_model(&client, spcso).await,
+        3,
+        "SPCSO3 debe ser direct-enhanced"
+    );
+
+    let ctl: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}").parse().unwrap();
+    client
+        .operate_enhanced(&ctl, MmsData::Bool(true), &ControlParameters::default())
+        .await
+        .expect("operate enhanced con CommandTermination+");
+    eprintln!("CommandTermination+ recibida y decodificada");
+}
+
+/// sbo-with-enhanced-security: SBOw + Oper + CommandTermination positiva.
+#[tokio::test]
+async fn interop_control_sbo_enhanced() {
+    use iec61850_mms::{ControlParameters, MmsData};
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let spcso = "SPCSO4";
+    assert_eq!(
+        read_ctl_model(&client, spcso).await,
+        4,
+        "SPCSO4 debe ser sbo-enhanced"
+    );
+
+    let ctl: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}").parse().unwrap();
+    let p = ControlParameters::default();
+    client
+        .select_with_value(&ctl, MmsData::Bool(true), &p)
+        .await
+        .expect("SBOw aceptado");
+    client
+        .operate_enhanced(&ctl, MmsData::Bool(true), &p)
+        .await
+        .expect("operate enhanced tras SBOw");
+    eprintln!("flujo sbo-enhanced completo (SBOw + Oper + CommandTermination+)");
+}
+
+/// Operar un sbo-enhanced SIN seleccionar: el rechazo debe llegar con el
+/// `LastApplError` de libiec61850 (AddCause 18 = object-not-selected u otro
+/// AddCause distinto de 0). Verifica nuestro parser de LastApplError contra
+/// el emisor real.
+#[tokio::test]
+async fn interop_control_not_selected_lastapplerror() {
+    use iec61850_mms::{ControlParameters, MmsData, MmsError};
+    let addr = control_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+    let spcso = "SPCSO4";
+    assert_eq!(read_ctl_model(&client, spcso).await, 4);
+
+    let ctl: ObjectReference = format!("simpleIOGenericIO/GGIO1.{spcso}").parse().unwrap();
+    let err = client
+        .operate_enhanced(&ctl, MmsData::Bool(true), &ControlParameters::default())
+        .await
+        .expect_err("operate sin select debe rechazarse");
+    eprintln!("rechazo recibido: {err}");
+    match err {
+        MmsError::ControlTerminated { add_cause } => {
+            eprintln!("AddCause del LastApplError: {add_cause}");
+            assert_eq!(
+                add_cause,
+                iec61850_mms::add_cause::OBJECT_NOT_SELECTED,
+                "se esperaba object-not-selected"
+            );
+        }
+        // Sin LastApplError correlacionado sería un DataAccess pelado: también
+        // conforme, pero registramos que no vimos la causa detallada.
+        MmsError::DataAccess(e) => {
+            panic!("Write− sin LastApplError correlacionado (esperábamos AddCause 18): {e}")
+        }
+        other => panic!("error inesperado: {other}"),
     }
 }
