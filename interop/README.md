@@ -38,6 +38,21 @@ Para file transfer se necesita un servidor con file service habilitado, p. ej.
 Usa **`--test-threads=1`**: server_example_basic_io acepta pocas conexiones
 concurrentes y varios tests asociándose a la vez lo saturan.
 
+### File services (server_example_files)
+
+El compose levanta `server_example_files` (puerto **10104**) con el filestore
+de ejemplo de libiec61850. Los tests
+`interop_files_*` cubren: listado (recursivo), GetFileAttributeValues, descarga
+byte-verificada y el ciclo **SetFile** completo — `obtainFile` con lecturas
+inversas servidas por nuestro cliente, verificación del fichero subido,
+re-descarga y `fileDelete`:
+
+```sh
+IEC61850_INTEROP_FILES_ADDR=127.0.0.1:10104 \
+  cargo test -p iec61850-mms --features client --test interop_client \
+    interop_files -- --nocapture --test-threads=1
+```
+
 ### Modelos de control (server_example_control)
 
 El compose levanta además `server_example_control` (puerto **10103**), que expone
@@ -150,6 +165,13 @@ regresión propia (no vendorizada). Historial:
   reportaba el dataset como `"ds1"`; 8-1 usa la referencia completa
   (`"IED1LD0/LLN0$ds1"`, como libiec61850). Corregido (`RcbDef::dataset_ref`),
   con lookup tolerante a las tres formas de nombre.
+- **Sin fragmentación COTP en el envío.** Los TSDU salían en una única DT TPDU
+  con EOT, ignorando el TPDU size negociado (1024): libiec61850 **abortaba la
+  conexión** al recibir una DT de 8 KiB (bloque de fichero servido durante un
+  obtainFile). La recepción ya reensamblaba; el envío no troceaba. Corregido
+  con `cotp::data_tpdus` (ISO 8073 clase 0, EOT solo en la última) aplicado a
+  toda la fase de datos de cliente y servidor — afectaba a cualquier PDU >1024
+  contra stacks estrictos. Regresión en `cotp::frag_tests`.
 
 Servicios verificados contra libiec61850 v1.6.1 (cliente→servidor): asociación ·
 Identify · GetServerDirectory · GetLogicalDeviceDirectory · Read · Write · control

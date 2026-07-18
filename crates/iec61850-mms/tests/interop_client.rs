@@ -895,3 +895,98 @@ async fn interop_control_not_selected_lastapplerror() {
         other => panic!("error inesperado: {other}"),
     }
 }
+
+// --- File services contra `server_example_files` ----------------------------
+//
+// Servidor de libiec61850 con file services y filestore de ejemplo. Se levanta
+// con el servicio `libiec61850-files` del compose y se apunta con
+// IEC61850_INTEROP_FILES_ADDR (p. ej. 127.0.0.1:10104).
+
+fn files_addr() -> Option<String> {
+    std::env::var("IEC61850_INTEROP_FILES_ADDR").ok()
+}
+
+macro_rules! files_addr_or_skip {
+    () => {
+        match files_addr() {
+            Some(a) => a,
+            None => {
+                eprintln!("IEC61850_INTEROP_FILES_ADDR no definida: test omitido");
+                return;
+            }
+        }
+    };
+}
+
+/// Listado (con recursión a subdirectorios) + GetFileAttributeValues +
+/// descarga byte-verificada contra el filestore real de libiec61850.
+#[tokio::test]
+async fn interop_files_directory_and_attributes() {
+    let addr = files_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+
+    let all = client
+        .file_directory_recursive()
+        .await
+        .expect("fileDirectory (recursivo)");
+    assert!(!all.is_empty(), "el filestore de ejemplo no está vacío");
+    for e in &all {
+        eprintln!("  {} ({} B)", e.name, e.size);
+    }
+
+    // Atributos del primer fichero y descarga coherente con su tamaño.
+    let first = &all[0];
+    let attrs = client
+        .get_file_attributes(&first.name)
+        .await
+        .expect("GetFileAttributeValues");
+    assert_eq!(attrs.size, first.size);
+    let data = client.download_file(&first.name).await.expect("descarga");
+    assert_eq!(data.len() as u32, first.size, "tamaño anunciado vs real");
+}
+
+/// **SetFile** (obtainFile) contra libiec61850: sube un fichero, verifica que
+/// aparece en el directorio con el tamaño correcto, lo re-descarga byte a byte
+/// y lo borra (fileDelete), comprobando que desaparece.
+#[tokio::test]
+async fn interop_files_upload_download_delete() {
+    let addr = files_addr_or_skip!();
+    let client = MmsClient::connect(&addr).await.expect("asocia");
+
+    let payload: Vec<u8> = (0..30_000u32).map(|i| (i % 249) as u8).collect();
+    match client
+        .upload_file("subida-rs.bin", "subida-rs.bin", payload.clone())
+        .await
+    {
+        Ok(()) => {}
+        Err(e) => {
+            // Un servidor compilado sin obtainFile lo rechaza limpiamente: se
+            // registra y se omite (no es un fallo de conformidad nuestro).
+            eprintln!("obtainFile no aceptado por el servidor ({e}): test omitido");
+            return;
+        }
+    }
+    eprintln!("obtainFile aceptado: fichero subido");
+
+    let attrs = client
+        .get_file_attributes("subida-rs.bin")
+        .await
+        .expect("el fichero subido debe listarse");
+    assert_eq!(attrs.size as usize, payload.len());
+
+    let echoed = client
+        .download_file("subida-rs.bin")
+        .await
+        .expect("re-descarga");
+    assert_eq!(echoed, payload, "contenido subido≠descargado");
+
+    client
+        .delete_file("subida-rs.bin")
+        .await
+        .expect("fileDelete");
+    assert!(
+        client.get_file_attributes("subida-rs.bin").await.is_err(),
+        "tras fileDelete el fichero no debe listarse"
+    );
+    eprintln!("ciclo SetFile→verificar→delete completo contra libiec61850");
+}

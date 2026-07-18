@@ -24,6 +24,25 @@ services:
       timeout: 3s
       retries: 5
 
+  # Servidor con file services habilitados (filestore con ficheros de ejemplo):
+  # fileDirectory/Open/Read/Close y obtainFile (SetFile). Arnés:
+  # IEC61850_INTEROP_FILES_ADDR=127.0.0.1:10104
+  libiec61850-files:
+    build:
+      context: .
+      dockerfile: Dockerfile.libiec61850
+      args:
+        LIBIEC61850_REF: v1.5.3
+    command: ["server_example_files"]
+    working_dir: /files
+    ports:
+      - "10104:102"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q ':0066' /proc/net/tcp || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Servidor con TODOS los modelos de control del 7-2 (SPCSO1..4:
   # direct-normal, sbo-normal, direct-enhanced, sbo-enhanced) para
   # verificar Oper/SBO/Cancel/CommandTermination/AddCause.

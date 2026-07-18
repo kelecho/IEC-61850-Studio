@@ -32,6 +32,7 @@ jobs:
         env:
           IEC61850_INTEROP_ADDR: 127.0.0.1:10102
           IEC61850_INTEROP_CONTROL_ADDR: 127.0.0.1:10103
+          IEC61850_INTEROP_FILES_ADDR: 127.0.0.1:10104
         run: >-
           cargo test -p iec61850-mms --features client --test interop_client
           -- --nocapture --test-threads=1

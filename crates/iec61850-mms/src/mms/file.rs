@@ -53,6 +53,15 @@ pub struct FileDirectory {
     pub more_follows: bool,
 }
 
+/// Registro **COMTRADE** descargado del IED: configuración (`.cfg`) y datos
+/// (`.dat`) emparejados, más la cabecera opcional (`.hdr`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComtradeRecord {
+    pub cfg: Vec<u8>,
+    pub dat: Vec<u8>,
+    pub hdr: Option<Vec<u8>>,
+}
+
 // --- FileName ---
 
 /// Escribe el contenido de un `FileName` (`SEQUENCE OF GraphicString`) con un
@@ -223,6 +232,104 @@ pub fn write_close_request(w: &mut BerWriter, frsm_id: i32) {
     w.integer(service::FILE_CLOSE, frsm_id as i64);
 }
 
+// --- fileDelete [76] ---
+
+/// Escribe `fileDelete [76] IMPLICIT FileName` (SEQUENCE OF GraphicString).
+pub fn write_delete_request(w: &mut BerWriter, name: &str) {
+    w.tlv(service::FILE_DELETE, |w| write_file_name(w, name));
+}
+
+/// Decodifica una petición `fileDelete` → nombre.
+pub fn decode_delete_request(service_tlv: &Tlv<'_>) -> Result<String, MmsError> {
+    let content = pdu::expect_service(service_tlv, service::FILE_DELETE)?;
+    decode_file_name(content)
+}
+
+/// Codifica la respuesta `fileDelete` (`NULL`, tag `[76]` primitivo).
+pub fn encode_delete_response(w: &mut BerWriter) {
+    w.null(Tag::context(76, false));
+}
+
+/// Valida una respuesta `fileDelete` (NULL con tag `[76]`).
+pub fn decode_delete_response(service_tlv: &Tlv<'_>) -> Result<(), MmsError> {
+    if service_tlv.tag.number == 76 {
+        Ok(())
+    } else {
+        Err(MmsError::UnexpectedPdu)
+    }
+}
+
+// --- fileRename [75] ---
+
+/// Escribe `fileRename [75] { currentFileName [0], newFileName [1] }`.
+pub fn write_rename_request(w: &mut BerWriter, current: &str, new_name: &str) {
+    w.tlv(service::FILE_RENAME, |w| {
+        w.tlv(Tag::context(0, true), |w| write_file_name(w, current));
+        w.tlv(Tag::context(1, true), |w| write_file_name(w, new_name));
+    });
+}
+
+/// Decodifica una petición `fileRename` → `(actual, nuevo)`.
+pub fn decode_rename_request(service_tlv: &Tlv<'_>) -> Result<(String, String), MmsError> {
+    let content = pdu::expect_service(service_tlv, service::FILE_RENAME)?;
+    let mut r = BerReader::new(content);
+    let current = decode_file_name(r.expect(Tag::context(0, true))?)?;
+    let new_name = decode_file_name(r.expect(Tag::context(1, true))?)?;
+    Ok((current, new_name))
+}
+
+/// Codifica la respuesta `fileRename` (`NULL`, tag `[75]` primitivo).
+pub fn encode_rename_response(w: &mut BerWriter) {
+    w.null(Tag::context(75, false));
+}
+
+/// Valida una respuesta `fileRename`.
+pub fn decode_rename_response(service_tlv: &Tlv<'_>) -> Result<(), MmsError> {
+    if service_tlv.tag.number == 75 {
+        Ok(())
+    } else {
+        Err(MmsError::UnexpectedPdu)
+    }
+}
+
+// --- obtainFile [46] ---
+
+/// Escribe `obtainFile [46] { sourceFile [1], destinationFile [2] }`: pide al
+/// servidor que OBTENGA `source` (un fichero que sirve el cliente por la misma
+/// asociación, con fileOpen/fileRead/fileClose inversos) y lo guarde como
+/// `destination` en su filestore. Es el mapeo MMS del **SetFile** de ACSI.
+pub fn write_obtain_request(w: &mut BerWriter, source: &str, destination: &str) {
+    w.tlv(service::OBTAIN_FILE, |w| {
+        w.tlv(Tag::context(1, true), |w| write_file_name(w, source));
+        w.tlv(Tag::context(2, true), |w| write_file_name(w, destination));
+    });
+}
+
+/// Decodifica una petición `obtainFile` → `(source, destination)`.
+pub fn decode_obtain_request(service_tlv: &Tlv<'_>) -> Result<(String, String), MmsError> {
+    let content = pdu::expect_service(service_tlv, service::OBTAIN_FILE)?;
+    let mut r = BerReader::new(content);
+    // sourceFileServer [0] OPTIONAL: se ignora si viene.
+    let _ = r.read_if(Tag::context(0, true))?;
+    let source = decode_file_name(r.expect(Tag::context(1, true))?)?;
+    let destination = decode_file_name(r.expect(Tag::context(2, true))?)?;
+    Ok((source, destination))
+}
+
+/// Codifica la respuesta `obtainFile` (`NULL`, tag `[46]` primitivo).
+pub fn encode_obtain_response(w: &mut BerWriter) {
+    w.null(Tag::context(46, false));
+}
+
+/// Valida una respuesta `obtainFile`.
+pub fn decode_obtain_response(service_tlv: &Tlv<'_>) -> Result<(), MmsError> {
+    if service_tlv.tag.number == 46 {
+        Ok(())
+    } else {
+        Err(MmsError::UnexpectedPdu)
+    }
+}
+
 // =====================================================================
 // Lado servidor: decodificar peticiones y codificar respuestas.
 // =====================================================================
@@ -317,11 +424,37 @@ pub fn encode_close_response(w: &mut BerWriter) {
 }
 
 /// Fuente de ficheros que un [`crate::server::MmsServer`] expone por MMS.
+///
+/// `write`/`delete`/`rename` tienen implementación por defecto que devuelve
+/// *unsupported*: un provider de solo lectura no necesita tocarlas.
 pub trait FileProvider: Send + Sync {
-    /// Lista los ficheros cuyo nombre empieza por `prefix` (None = todos).
+    /// Lista los ficheros cuyo nombre empieza por `prefix` (None = todos). Los
+    /// subdirectorios se listan como entradas cuyo nombre termina en `/`
+    /// (tamaño 0); pedir ese prefijo lista su contenido.
     fn list(&self, prefix: Option<&str>) -> std::io::Result<Vec<FileEntry>>;
     /// Lee el contenido completo de un fichero.
     fn read(&self, name: &str) -> std::io::Result<Vec<u8>>;
+    /// Guarda un fichero (obtainFile / SetFile).
+    fn write(&self, _name: &str, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "filestore de solo lectura",
+        ))
+    }
+    /// Borra un fichero (fileDelete).
+    fn delete(&self, _name: &str) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "filestore de solo lectura",
+        ))
+    }
+    /// Renombra un fichero (fileRename).
+    fn rename(&self, _current: &str, _new_name: &str) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "filestore de solo lectura",
+        ))
+    }
 }
 
 /// Proveedor de ficheros respaldado por un directorio del disco. Sirve los
@@ -358,25 +491,46 @@ impl DirFileProvider {
 
 impl FileProvider for DirFileProvider {
     fn list(&self, prefix: Option<&str>) -> std::io::Result<Vec<FileEntry>> {
-        let prefix = prefix.map(|p| p.trim_start_matches('/').to_string());
+        let prefix = prefix
+            .map(|p| p.trim_start_matches('/').to_string())
+            .unwrap_or_default();
+        // Un prefijo terminado en '/' lista ese subdirectorio; en otro caso se
+        // lista el directorio padre del prefijo filtrando por el resto.
+        let (dir_rel, filter) = match prefix.rsplit_once('/') {
+            Some((d, f)) => (d.to_string(), f.to_string()),
+            None => (String::new(), prefix.clone()),
+        };
+        let dir = if dir_rel.is_empty() {
+            self.base.clone()
+        } else {
+            self.resolve(&dir_rel)?
+        };
         let mut out = Vec::new();
-        for entry in std::fs::read_dir(&self.base)? {
+        for entry in std::fs::read_dir(&dir)? {
             let entry = entry?;
             let meta = entry.metadata()?;
-            if !meta.is_file() {
+            let base_name = entry.file_name().to_string_lossy().into_owned();
+            if !filter.is_empty() && !base_name.starts_with(&filter) {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(p) = &prefix {
-                if !name.starts_with(p) {
-                    continue;
-                }
+            let full = if dir_rel.is_empty() {
+                base_name
+            } else {
+                format!("{dir_rel}/{base_name}")
+            };
+            if meta.is_dir() {
+                out.push(FileEntry {
+                    name: format!("{full}/"),
+                    size: 0,
+                    last_modified: None,
+                });
+            } else if meta.is_file() {
+                out.push(FileEntry {
+                    name: full,
+                    size: meta.len() as u32,
+                    last_modified: None,
+                });
             }
-            out.push(FileEntry {
-                name,
-                size: meta.len() as u32,
-                last_modified: None,
-            });
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)
@@ -384,6 +538,22 @@ impl FileProvider for DirFileProvider {
 
     fn read(&self, name: &str) -> std::io::Result<Vec<u8>> {
         std::fs::read(self.resolve(name)?)
+    }
+
+    fn write(&self, name: &str, data: &[u8]) -> std::io::Result<()> {
+        let path = self.resolve(name)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, data)
+    }
+
+    fn delete(&self, name: &str) -> std::io::Result<()> {
+        std::fs::remove_file(self.resolve(name)?)
+    }
+
+    fn rename(&self, current: &str, new_name: &str) -> std::io::Result<()> {
+        std::fs::rename(self.resolve(current)?, self.resolve(new_name)?)
     }
 }
 

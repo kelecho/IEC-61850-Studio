@@ -18,10 +18,12 @@ use tokio::task::JoinHandle;
 
 use crate::ber::writer::BerWriter;
 use crate::control::{self, ControlParameters};
-use crate::error::MmsError;
+use crate::error::{DataAccessError, MmsError};
 use crate::mapping::{mms_to_object_reference, object_reference_to_mms};
 use crate::mms::data::MmsData;
-use crate::mms::file::{self, FileChunk, FileDirectory, FileOpen};
+use crate::mms::file::{
+    self, ComtradeRecord, FileAttributes, FileChunk, FileDirectory, FileEntry, FileOpen,
+};
 use crate::mms::get_name_list::{self, ObjectClass, ObjectScope};
 use crate::mms::identify::{self, IdentifyResponse};
 use crate::mms::initiate::{InitiateRequest, InitiateResponse};
@@ -63,6 +65,17 @@ type PendingMap = HashMap<u32, oneshot::Sender<Result<Vec<u8>, MmsError>>>;
 /// entre la API y la tarea lectora.
 type DatasetMembers = Arc<Vec<(String, String)>>;
 
+/// Estado de una lectura INVERSA en curso: el servidor está leyendo (con
+/// fileOpen/fileRead/fileClose hacia el cliente) un fichero ofrecido, durante
+/// un `obtainFile` (SetFile).
+struct ReverseRead {
+    data: Arc<Vec<u8>>,
+    pos: usize,
+}
+
+/// Bloque de las lecturas inversas servidas por el cliente.
+const REVERSE_READ_CHUNK: usize = 8192;
+
 struct Shared {
     pending: Mutex<PendingMap>,
     /// Último `LastApplError` recibido (control): la causa detallada del último
@@ -73,11 +86,16 @@ struct Shared {
     /// `ReportEntry::reference` a partir del `member_index` (IEC 61850-8-1),
     /// en vez del best-effort por OptFlds.
     report_members: std::sync::Mutex<HashMap<String, DatasetMembers>>,
+    /// Ficheros que el cliente OFRECE al servidor para `obtainFile` (SetFile):
+    /// la tarea lectora atiende los fileOpen/fileRead/fileClose inversos.
+    offered_files: std::sync::Mutex<HashMap<String, Arc<Vec<u8>>>>,
+    /// Lecturas inversas abiertas por el servidor (`frsmID` propio del cliente).
+    reverse_reads: std::sync::Mutex<HashMap<i32, ReverseRead>>,
 }
 
 /// Cliente MMS conectado y asociado a un servidor.
 pub struct MmsClient {
-    writer: Mutex<crate::transport::connection::IsoWriter>,
+    writer: Arc<Mutex<crate::transport::connection::IsoWriter>>,
     shared: Arc<Shared>,
     next_invoke: AtomicU32,
     negotiated: InitiateResponse,
@@ -171,7 +189,7 @@ impl MmsClient {
         let initiate = InitiateRequest::default().encode();
         let aarq = acse::aarq_auth(&initiate, auth_value);
         let cp = presentation::connect_cp(&aarq);
-        conn.send(&cotp::data_tpdu(&session::connect(&cp))).await?;
+        conn.send_data_tsdu(&session::connect(&cp)).await?;
         let resp = recv_data_with_timeout(&mut conn).await?;
         // Si el servidor rechazó el contexto de presentación MMS en su
         // Result-list, fallar aquí con la causa (no después, con PDUs opacos).
@@ -179,12 +197,17 @@ impl MmsClient {
         let aare = presentation::extract_inner_pdu(&resp)?;
         let negotiated = InitiateResponse::decode(acse::parse_aare(aare)?)?;
 
-        // Separar y lanzar la tarea lectora.
+        // Separar y lanzar la tarea lectora. El writer se comparte con ella:
+        // durante un obtainFile (SetFile) el SERVIDOR envía fileOpen/fileRead/
+        // fileClose y la tarea lectora responde por el mismo socket.
         let (reader, writer) = conn.split();
+        let writer = Arc::new(Mutex::new(writer));
         let shared = Arc::new(Shared {
             pending: Mutex::new(HashMap::new()),
             last_appl_error: std::sync::Mutex::new(None),
             report_members: std::sync::Mutex::new(HashMap::new()),
+            offered_files: std::sync::Mutex::new(HashMap::new()),
+            reverse_reads: std::sync::Mutex::new(HashMap::new()),
         });
         let (report_tx, report_rx) = mpsc::channel(256);
         let (term_tx, _) = broadcast::channel(64);
@@ -193,10 +216,11 @@ impl MmsClient {
             shared.clone(),
             report_tx,
             term_tx.clone(),
+            writer.clone(),
         ));
 
         Ok(MmsClient {
-            writer: Mutex::new(writer),
+            writer,
             shared,
             next_invoke: AtomicU32::new(1),
             negotiated,
@@ -247,11 +271,11 @@ impl MmsClient {
         let (tx, rx) = oneshot::channel();
         self.shared.pending.lock().await.insert(id, tx);
 
-        let framed = {
+        let tsdu = {
             let ud = presentation::user_data(&pdu, presentation::MMS_CONTEXT_ID);
-            cotp::data_tpdu(&session::data(&ud))
+            session::data(&ud)
         };
-        if let Err(e) = self.writer.lock().await.send(&framed).await {
+        if let Err(e) = self.writer.lock().await.send_data(&tsdu).await {
             self.shared.pending.lock().await.remove(&id);
             return Err(e);
         }
@@ -501,6 +525,108 @@ impl MmsClient {
         }
         self.file_close(open.frsm_id).await?;
         Ok(out)
+    }
+
+    /// **GetFileAttributeValues** (ACSI): atributos (tamaño/fecha) de un fichero
+    /// concreto, vía `fileDirectory` con fileSpecification.
+    pub async fn get_file_attributes(&self, name: &str) -> Result<FileAttributes, MmsError> {
+        let dir = self.file_directory(Some(name), None).await?;
+        let want = name.trim_start_matches('/');
+        dir.entries
+            .into_iter()
+            .find(|e| e.name.trim_start_matches('/') == want)
+            .map(|e| FileAttributes {
+                size: e.size,
+                last_modified: e.last_modified,
+            })
+            .ok_or(MmsError::DataAccess(DataAccessError::ObjectNonExistent))
+    }
+
+    /// Borra un fichero del filestore del servidor (`fileDelete [76]`).
+    pub async fn delete_file(&self, name: &str) -> Result<(), MmsError> {
+        let pdu = self
+            .request(|w| file::write_delete_request(w, name))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        file::decode_delete_response(&cr.service)
+    }
+
+    /// Renombra un fichero del filestore del servidor (`fileRename [75]`).
+    pub async fn rename_file(&self, current: &str, new_name: &str) -> Result<(), MmsError> {
+        let pdu = self
+            .request(|w| file::write_rename_request(w, current, new_name))
+            .await?;
+        let cr = pdu::parse_confirmed_response(&pdu)?;
+        file::decode_rename_response(&cr.service)
+    }
+
+    /// Lista el filestore completo del servidor, **descendiendo a los
+    /// subdirectorios** (entradas cuyo nombre termina en `/`). Devuelve solo
+    /// ficheros, con su ruta completa. Sigue `moreFollows` en cada nivel.
+    pub async fn file_directory_recursive(&self) -> Result<Vec<FileEntry>, MmsError> {
+        let mut out = Vec::new();
+        let mut pending: Vec<Option<String>> = vec![None];
+        while let Some(prefix) = pending.pop() {
+            let mut continue_after: Option<String> = None;
+            loop {
+                let dir = self
+                    .file_directory(prefix.as_deref(), continue_after.as_deref())
+                    .await?;
+                let last = dir.entries.last().map(|e| e.name.clone());
+                for e in dir.entries {
+                    if e.name.ends_with('/') {
+                        pending.push(Some(e.name));
+                    } else {
+                        out.push(e);
+                    }
+                }
+                if !dir.more_follows {
+                    break;
+                }
+                continue_after = last;
+            }
+        }
+        Ok(out)
+    }
+
+    /// **SetFile** (ACSI): sube un fichero al servidor vía `obtainFile [46]`.
+    /// El contenido se ofrece bajo `source_name` y el servidor lo lee de vuelta
+    /// (fileOpen/fileRead/fileClose inversos por esta misma asociación, que la
+    /// tarea lectora atiende) y lo guarda como `dest_name` en su filestore.
+    pub async fn upload_file(
+        &self,
+        source_name: &str,
+        dest_name: &str,
+        data: Vec<u8>,
+    ) -> Result<(), MmsError> {
+        self.shared
+            .offered_files
+            .lock()
+            .unwrap()
+            .insert(source_name.to_string(), Arc::new(data));
+        let result = async {
+            let pdu = self
+                .request(|w| file::write_obtain_request(w, source_name, dest_name))
+                .await?;
+            let cr = pdu::parse_confirmed_response(&pdu)?;
+            file::decode_obtain_response(&cr.service)
+        }
+        .await;
+        self.shared
+            .offered_files
+            .lock()
+            .unwrap()
+            .remove(source_name);
+        result
+    }
+
+    /// Descarga un registro **COMTRADE**: los ficheros emparejados `base.cfg` y
+    /// `base.dat`, más `base.hdr` si existe. `base` va sin extensión.
+    pub async fn download_comtrade(&self, base: &str) -> Result<ComtradeRecord, MmsError> {
+        let cfg = self.download_file(&format!("{base}.cfg")).await?;
+        let dat = self.download_file(&format!("{base}.dat")).await?;
+        let hdr = self.download_file(&format!("{base}.hdr")).await.ok();
+        Ok(ComtradeRecord { cfg, dat, hdr })
     }
 
     // --- Write ---
@@ -804,6 +930,7 @@ async fn reader_loop(
     shared: Arc<Shared>,
     report_tx: mpsc::Sender<Report>,
     term_tx: broadcast::Sender<CommandTermination>,
+    writer: Arc<Mutex<crate::transport::connection::IsoWriter>>,
 ) {
     loop {
         match reader.recv_data().await {
@@ -811,6 +938,13 @@ async fn reader_loop(
                 let Ok(pdu) = presentation::extract_inner_pdu(&tsdu) else {
                     continue;
                 };
+                if std::env::var("IEC61850_DEBUG_PDU").is_ok() {
+                    eprintln!(
+                        "DBG<- kind={:?} bytes={:02x?}",
+                        pdu::peek_invoke_and_kind(pdu),
+                        &pdu[..pdu.len().min(24)]
+                    );
+                }
                 match pdu::peek_invoke_and_kind(pdu) {
                     Ok((PduKind::Unconfirmed, _)) => {
                         if let Ok(svc) = pdu::parse_unconfirmed(pdu) {
@@ -853,6 +987,15 @@ async fn reader_loop(
                             }
                         }
                     }
+                    // Petición ENTRANTE del servidor: lecturas inversas de un
+                    // fichero ofrecido durante obtainFile (SetFile).
+                    Ok((PduKind::ConfirmedRequest, _)) => {
+                        if let Some(resp) = handle_reverse_request(&shared, pdu) {
+                            let ud = presentation::user_data(&resp, presentation::MMS_CONTEXT_ID);
+                            let tsdu = session::data(&ud);
+                            let _ = writer.lock().await.send_data(&tsdu).await;
+                        }
+                    }
                     Ok((_, Some(id))) => {
                         if let Some(tx) = shared.pending.lock().await.remove(&id) {
                             let _ = tx.send(Ok(pdu.to_vec()));
@@ -870,5 +1013,61 @@ async fn reader_loop(
                 break;
             }
         }
+    }
+}
+
+/// Atiende una petición de fichero ENTRANTE (rol invertido, obtainFile): el
+/// servidor lee un fichero ofrecido con fileOpen/fileRead/fileClose. Devuelve
+/// la respuesta a enviar, o `None` si el servicio no es de ficheros (se ignora).
+fn handle_reverse_request(shared: &Shared, pdu: &[u8]) -> Option<Vec<u8>> {
+    use crate::mms::file::{FileAttributes, FileChunk, FileOpen};
+    use crate::mms::pdu::service;
+
+    let (invoke, svc) = pdu::parse_confirmed_request(pdu).ok()?;
+    if svc.tag == service::FILE_OPEN {
+        let (name, pos) = file::decode_open_request(&svc).ok()?;
+        let data = shared.offered_files.lock().unwrap().get(&name).cloned()?;
+        let size = data.len() as u32;
+        let mut g = shared.reverse_reads.lock().unwrap();
+        let frsm_id = g.keys().max().copied().unwrap_or(0) + 1;
+        g.insert(
+            frsm_id,
+            ReverseRead {
+                data,
+                pos: (pos as usize).min(size as usize),
+            },
+        );
+        Some(pdu::encode_confirmed_response(invoke, |w| {
+            file::encode_open_response(
+                w,
+                &FileOpen {
+                    frsm_id,
+                    attributes: FileAttributes {
+                        size,
+                        last_modified: None,
+                    },
+                },
+            )
+        }))
+    } else if svc.tag == service::FILE_READ {
+        let frsm = file::decode_read_request(&svc).ok()?;
+        let mut g = shared.reverse_reads.lock().unwrap();
+        let st = g.get_mut(&frsm)?;
+        let end = (st.pos + REVERSE_READ_CHUNK).min(st.data.len());
+        let data = st.data[st.pos..end].to_vec();
+        st.pos = end;
+        let more_follows = st.pos < st.data.len();
+        Some(pdu::encode_confirmed_response(invoke, |w| {
+            file::encode_read_response(w, &FileChunk { data, more_follows })
+        }))
+    } else if svc.tag == service::FILE_CLOSE {
+        let frsm = file::decode_close_request(&svc).ok()?;
+        shared.reverse_reads.lock().unwrap().remove(&frsm);
+        Some(pdu::encode_confirmed_response(
+            invoke,
+            file::encode_close_response,
+        ))
+    } else {
+        None
     }
 }

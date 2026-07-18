@@ -41,6 +41,10 @@ pub mod service {
     /// rechazaba con pdu-error la forma invertida que usábamos antes).
     pub const GET_NAMED_VARIABLE_LIST_ATTRIBUTES: Tag = Tag::context(12, true);
     pub const DELETE_NAMED_VARIABLE_LIST: Tag = Tag::context(13, true);
+    /// ObtainFile `[46]`: el cliente ordena al servidor OBTENER un fichero del
+    /// propio cliente (mapeo MMS del SetFile de ACSI: el servidor hace
+    /// fileOpen/fileRead/fileClose inversos sobre la misma asociación).
+    pub const OBTAIN_FILE: Tag = Tag::context(46, true);
     /// ReadJournal (logs, ISO 9506): tag `[65]` constructed (multi-byte `bf 41`).
     pub const READ_JOURNAL: Tag = Tag::context(65, true);
     // Servicios de transferencia de ficheros (tags altos, multi-byte).
@@ -50,6 +54,10 @@ pub mod service {
     pub const FILE_READ: Tag = Tag::context(73, false);
     pub const FILE_READ_RESPONSE: Tag = Tag::context(73, true);
     pub const FILE_CLOSE: Tag = Tag::context(74, false);
+    /// fileRename `[75]`: `{ currentFileName [0], newFileName [1] }`.
+    pub const FILE_RENAME: Tag = Tag::context(75, true);
+    /// fileDelete `[76]`: la petición es el `FileName` (SEQUENCE OF) directo.
+    pub const FILE_DELETE: Tag = Tag::context(76, true);
     pub const FILE_DIRECTORY: Tag = Tag::context(77, true);
 }
 
@@ -158,6 +166,9 @@ pub fn peek_request_kind(pdu: &[u8]) -> Result<PduKind, MmsError> {
     let outer = r.read_tlv()?;
     Ok(match outer.tag {
         t if t == mmspdu::CONFIRMED_REQUEST => PduKind::ConfirmedRequest,
+        t if t == mmspdu::CONFIRMED_RESPONSE => PduKind::ConfirmedResponse,
+        t if t == mmspdu::CONFIRMED_ERROR => PduKind::ConfirmedError,
+        t if t == mmspdu::REJECT => PduKind::Reject,
         t if t == mmspdu::INITIATE_REQUEST => PduKind::InitiateRequest,
         t if t == mmspdu::CONCLUDE_REQUEST => PduKind::ConcludeRequest,
         _ => PduKind::Other,
@@ -175,6 +186,9 @@ pub fn peek_invoke_and_kind(pdu: &[u8]) -> Result<(PduKind, Option<u32>), MmsErr
         t if t == mmspdu::CONFIRMED_RESPONSE => PduKind::ConfirmedResponse,
         t if t == mmspdu::CONFIRMED_ERROR => PduKind::ConfirmedError,
         t if t == mmspdu::REJECT => PduKind::Reject,
+        // Petición ENTRANTE (rol invertido): el par lee un fichero ofrecido
+        // durante un obtainFile (SetFile) con fileOpen/fileRead/fileClose.
+        t if t == mmspdu::CONFIRMED_REQUEST => PduKind::ConfirmedRequest,
         t if t == mmspdu::UNCONFIRMED => return Ok((PduKind::Unconfirmed, None)),
         _ => return Ok((PduKind::Other, None)),
     };

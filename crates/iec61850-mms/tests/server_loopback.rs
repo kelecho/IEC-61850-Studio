@@ -1378,3 +1378,67 @@ async fn report_entries_carry_dataset_references() {
         "la referencia debe salir del dataset resuelto: {report:?}"
     );
 }
+
+// --- File transfer completo: recursivo, atributos, COMTRADE, SetFile --------
+
+/// Filestore completo en loopback: listado recursivo (subdirectorios),
+/// GetFileAttributeValues, descarga COMTRADE emparejada, subida por
+/// `obtainFile` (SetFile, con lecturas inversas servidas por el cliente),
+/// rename y delete.
+#[tokio::test]
+async fn file_transfer_complete() {
+    // Filestore temporal con ficheros de prueba.
+    let root = std::env::temp_dir().join(format!("iec61850-files-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(root.join("a.txt"), b"hola").unwrap();
+    std::fs::write(root.join("sub/b.txt"), b"anidado").unwrap();
+    std::fs::write(root.join("rec.cfg"), b"CFG").unwrap();
+    std::fs::write(root.join("rec.dat"), b"DAT").unwrap();
+
+    let model = iec61850_scl::load_model(fixture()).unwrap();
+    let sm = ServerModel::from_model(&model, ident()).with_file_root(&root);
+    let store = sm.init_store(&model);
+    let server = MmsServer::bind("127.0.0.1:0", Arc::new(sm), store)
+        .await
+        .unwrap();
+    let addr = server.local_addr().unwrap();
+    tokio::spawn(server.serve());
+
+    let client = MmsClient::connect(addr).await.unwrap();
+
+    // Listado recursivo: ficheros de la raíz Y del subdirectorio.
+    let all = client.file_directory_recursive().await.unwrap();
+    let names: Vec<&str> = all.iter().map(|e| e.name.as_str()).collect();
+    assert!(names.contains(&"a.txt"), "raíz: {names:?}");
+    assert!(names.contains(&"sub/b.txt"), "subdirectorio: {names:?}");
+
+    // GetFileAttributeValues: atributos de un fichero concreto.
+    let attrs = client.get_file_attributes("a.txt").await.unwrap();
+    assert_eq!(attrs.size, 4);
+    assert!(client.get_file_attributes("no-existe").await.is_err());
+
+    // COMTRADE: cfg+dat emparejados; hdr ausente ⇒ None.
+    let rec = client.download_comtrade("rec").await.unwrap();
+    assert_eq!(rec.cfg, b"CFG");
+    assert_eq!(rec.dat, b"DAT");
+    assert!(rec.hdr.is_none());
+
+    // SetFile (obtainFile): sube 20 KiB (varios bloques inversos) y verifica
+    // byte a byte re-descargándolo.
+    let payload: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+    client
+        .upload_file("local.bin", "subida.bin", payload.clone())
+        .await
+        .expect("obtainFile (SetFile)");
+    let echoed = client.download_file("subida.bin").await.unwrap();
+    assert_eq!(echoed, payload, "el fichero subido debe ser idéntico");
+
+    // Rename + delete: el filestore refleja ambos.
+    client.rename_file("subida.bin", "final.bin").await.unwrap();
+    assert!(client.get_file_attributes("final.bin").await.is_ok());
+    client.delete_file("final.bin").await.unwrap();
+    assert!(client.get_file_attributes("final.bin").await.is_err());
+
+    let _ = std::fs::remove_dir_all(&root);
+}

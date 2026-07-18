@@ -16,7 +16,7 @@ pub mod type_attr;
 pub mod write;
 
 pub use data::{MmsData, UtcTime};
-pub use file::{FileAttributes, FileChunk, FileDirectory, FileEntry, FileOpen};
+pub use file::{ComtradeRecord, FileAttributes, FileChunk, FileDirectory, FileEntry, FileOpen};
 pub use get_name_list::{GetNameListResponse, ObjectClass, ObjectScope};
 pub use identify::IdentifyResponse;
 pub use initiate::{InitiateRequest, InitiateResponse};

@@ -115,6 +115,9 @@ impl Permissions {
     pub const SETTING: Self = Self(1 << 6);
     /// Leer ficheros del servidor (fileOpen/Read, p. ej. oscilografías).
     pub const FILE_READ: Self = Self(1 << 7);
+    /// Modificar el filestore del servidor: subir (obtainFile/SetFile), borrar
+    /// (fileDelete) o renombrar (fileRename) ficheros.
+    pub const FILE_WRITE: Self = Self(1 << 8);
 
     /// Conjunto vacío (ningún permiso), para construir roles personalizados.
     pub const NONE: Self = Self(0);
@@ -164,6 +167,7 @@ impl Role {
                     | P::CONFIG
                     | P::SETTING
                     | P::FILE_READ
+                    | P::FILE_WRITE
             }
             // Personalizado: el conjunto que porta.
             Role::Custom(p) => p,
@@ -224,6 +228,11 @@ impl Role {
     /// ¿Puede leer ficheros del servidor?
     fn may_read_files(self) -> bool {
         self.permissions().contains(Permissions::FILE_READ)
+    }
+
+    /// ¿Puede modificar el filestore (subir/borrar/renombrar ficheros)?
+    fn may_write_files(self) -> bool {
+        self.permissions().contains(Permissions::FILE_WRITE)
     }
 }
 
@@ -1556,6 +1565,23 @@ struct ConnState {
     conn_id: u64,
     /// Reservas de RCB compartidas del servidor (Resv/ResvTms).
     reservations: Reservations,
+    /// Transferencia `obtainFile` en curso (SetFile entrante): el servidor lee
+    /// del cliente con fileOpen/fileRead/fileClose inversos.
+    obtain: Option<ObtainState>,
+    /// invokeID de las peticiones que ESTE servidor envía al cliente.
+    next_out_invoke: u32,
+}
+
+/// Estado de un `obtainFile` (SetFile) en curso.
+struct ObtainState {
+    /// invokeID de la petición obtainFile original (a responder al final).
+    invoke: u32,
+    /// Nombre de destino en el filestore del servidor.
+    dest: String,
+    /// frsmID de la lectura inversa (tras el fileOpen).
+    frsm: Option<i32>,
+    /// Contenido acumulado.
+    data: Vec<u8>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1641,7 +1667,7 @@ async fn handle_connection(
                     crate::transport::tls::validate_certificate(&der, revocation.as_deref(), now)
                 {
                     let reject = accept_of(&acse::aare_reject());
-                    let _ = conn.send(&cotp::data_tpdu(&reject)).await;
+                    let _ = conn.send_data_tsdu(&reject).await;
                     return Err(MmsError::AssociateRejected(format!(
                         "certificado rechazado (62351-9): {e}"
                     )));
@@ -1657,7 +1683,7 @@ async fn handle_connection(
             None => {
                 // Autenticación fallida: responder AARE de rechazo y cerrar.
                 let reject = accept_of(&acse::aare_reject());
-                let _ = conn.send(&cotp::data_tpdu(&reject)).await;
+                let _ = conn.send_data_tsdu(&reject).await;
                 return Err(MmsError::AssociateRejected(
                     "autenticación fallida (62351-4)".into(),
                 ));
@@ -1667,7 +1693,7 @@ async fn handle_connection(
         let req = InitiateRequest::decode(inner)?;
         let resp = InitiateResponse::accept(&req);
         let accept = accept_of(&acse::aare(&resp.encode()));
-        conn.send(&cotp::data_tpdu(&accept)).await?;
+        conn.send_data_tsdu(&accept).await?;
         Ok::<_, MmsError>((role, mms_ctx))
     })
     .await
@@ -1708,6 +1734,14 @@ async fn handle_connection(
                 match pdu::peek_request_kind(pdu)? {
                     PduKind::ConfirmedRequest => {
                         let (invoke, service) = pdu::parse_confirmed_request(pdu)?;
+                        // obtainFile (SetFile) difiere su respuesta: arranca la
+                        // lectura inversa hacia el cliente.
+                        if service.tag == pdu::service::OBTAIN_FILE {
+                            for msg in state.start_obtain_file(invoke, &service, &model) {
+                                send_report(&mut writer, mms_ctx, &msg).await?;
+                            }
+                            continue;
+                        }
                         let out = state
                             .handle_request(invoke, &service, &model, &store, &change_tx, &buffers)
                             .await;
@@ -1717,6 +1751,13 @@ async fn handle_connection(
                         send_report(&mut writer, mms_ctx, &out.resp).await?;
                         for msg in &out.post {
                             send_report(&mut writer, mms_ctx, msg).await?;
+                        }
+                    }
+                    // Respuestas del CLIENTE a nuestras peticiones inversas
+                    // (fileOpen/fileRead/fileClose de un obtainFile en curso).
+                    PduKind::ConfirmedResponse | PduKind::ConfirmedError | PduKind::Reject => {
+                        for msg in state.obtain_file_step(pdu, &model) {
+                            send_report(&mut writer, mms_ctx, &msg).await?;
                         }
                     }
                     PduKind::ConcludeRequest => {
@@ -1822,6 +1863,10 @@ impl ConnState {
             ServiceOutput::only(self.handle_file_read(invoke, service))
         } else if tag == pdu::service::FILE_CLOSE {
             ServiceOutput::only(self.handle_file_close(invoke, service))
+        } else if tag == pdu::service::FILE_DELETE {
+            ServiceOutput::only(self.handle_file_delete(invoke, service, model))
+        } else if tag == pdu::service::FILE_RENAME {
+            ServiceOutput::only(self.handle_file_rename(invoke, service, model))
         } else if tag == pdu::service::WRITE {
             self.handle_write(invoke, service, model, store, change_tx, buffers)
                 .await
@@ -1959,6 +2004,135 @@ impl ConnState {
         };
         self.files.remove(&frsm);
         pdu::encode_confirmed_response(invoke, file::encode_close_response)
+    }
+
+    /// `fileDelete [76]`: borra un fichero del filestore (RBAC: FILE_WRITE).
+    fn handle_file_delete(
+        &mut self,
+        invoke: u32,
+        service: &Tlv<'_>,
+        model: &ServerModel,
+    ) -> Vec<u8> {
+        if !self.role.may_write_files() {
+            return encode_error(invoke);
+        }
+        let (Some(provider), Ok(name)) =
+            (model.file_provider(), file::decode_delete_request(service))
+        else {
+            return encode_error(invoke);
+        };
+        if provider.delete(&name).is_err() {
+            return encode_error(invoke);
+        }
+        pdu::encode_confirmed_response(invoke, file::encode_delete_response)
+    }
+
+    /// `fileRename [75]`: renombra un fichero del filestore (RBAC: FILE_WRITE).
+    fn handle_file_rename(
+        &mut self,
+        invoke: u32,
+        service: &Tlv<'_>,
+        model: &ServerModel,
+    ) -> Vec<u8> {
+        if !self.role.may_write_files() {
+            return encode_error(invoke);
+        }
+        let (Some(provider), Ok((cur, new))) =
+            (model.file_provider(), file::decode_rename_request(service))
+        else {
+            return encode_error(invoke);
+        };
+        if provider.rename(&cur, &new).is_err() {
+            return encode_error(invoke);
+        }
+        pdu::encode_confirmed_response(invoke, file::encode_rename_response)
+    }
+
+    /// Arranca un `obtainFile [46]` (SetFile): valida permisos y provider, y
+    /// devuelve la petición fileOpen inversa a enviar al cliente. La respuesta
+    /// al obtainFile se emite al completar la transferencia.
+    fn start_obtain_file(
+        &mut self,
+        invoke: u32,
+        service: &Tlv<'_>,
+        model: &ServerModel,
+    ) -> Vec<Vec<u8>> {
+        if !self.role.may_write_files() || model.file_provider().is_none() || self.obtain.is_some()
+        {
+            return vec![encode_error(invoke)];
+        }
+        let Ok((source, dest)) = file::decode_obtain_request(service) else {
+            return vec![encode_error(invoke)];
+        };
+        self.next_out_invoke += 1;
+        let out = self.next_out_invoke;
+        self.obtain = Some(ObtainState {
+            invoke,
+            dest,
+            frsm: None,
+            data: Vec::new(),
+        });
+        vec![pdu::encode_confirmed_request(out, |w| {
+            file::write_open_request(w, &source, 0)
+        })]
+    }
+
+    /// Avanza el `obtainFile` en curso con una respuesta entrante del cliente
+    /// (fileOpen/fileRead inversos). Devuelve los mensajes a enviar: la
+    /// siguiente petición, o el fileClose + la respuesta final al obtainFile.
+    fn obtain_file_step(&mut self, pdu_bytes: &[u8], model: &ServerModel) -> Vec<Vec<u8>> {
+        let Some(mut st) = self.obtain.take() else {
+            return Vec::new(); // p. ej. la respuesta del fileClose final
+        };
+        let Ok(cr) = pdu::parse_confirmed_response(pdu_bytes) else {
+            // error o reject del cliente: el obtainFile falla.
+            return vec![encode_error(st.invoke)];
+        };
+        match st.frsm {
+            None => match file::decode_open_response(&cr.service) {
+                Ok(open) => {
+                    st.frsm = Some(open.frsm_id);
+                    self.next_out_invoke += 1;
+                    let out = self.next_out_invoke;
+                    let req = pdu::encode_confirmed_request(out, |w| {
+                        file::write_read_request(w, open.frsm_id)
+                    });
+                    self.obtain = Some(st);
+                    vec![req]
+                }
+                Err(_) => vec![encode_error(st.invoke)],
+            },
+            Some(frsm) => match file::decode_read_response(&cr.service) {
+                Ok(chunk) => {
+                    st.data.extend_from_slice(&chunk.data);
+                    self.next_out_invoke += 1;
+                    let out = self.next_out_invoke;
+                    if chunk.more_follows {
+                        let req = pdu::encode_confirmed_request(out, |w| {
+                            file::write_read_request(w, frsm)
+                        });
+                        self.obtain = Some(st);
+                        vec![req]
+                    } else {
+                        let close = pdu::encode_confirmed_request(out, |w| {
+                            file::write_close_request(w, frsm)
+                        });
+                        let saved = model
+                            .file_provider()
+                            .is_some_and(|p| p.write(&st.dest, &st.data).is_ok());
+                        let resp = if saved {
+                            pdu::encode_confirmed_response(st.invoke, |w| {
+                                file::encode_obtain_response(w)
+                            })
+                        } else {
+                            encode_error(st.invoke)
+                        };
+                        vec![close, resp]
+                    }
+                }
+                Err(_) => vec![encode_error(st.invoke)],
+            },
+        }
     }
 
     async fn handle_read(
@@ -2902,5 +3076,5 @@ fn build_name_list(model: &ServerModel, req: &GetNameListRequest) -> GetNameList
 /// que el CLIENTE propuso para MMS en su CP (negociación ISO 8823).
 async fn send_report(writer: &mut IsoWriter, mms_ctx: i64, pdu: &[u8]) -> Result<(), MmsError> {
     let ud = presentation::user_data(pdu, mms_ctx);
-    writer.send(&cotp::data_tpdu(&session::data(&ud))).await
+    writer.send_data(&session::data(&ud)).await
 }

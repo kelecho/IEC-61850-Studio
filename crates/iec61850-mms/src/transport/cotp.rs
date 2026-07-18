@@ -144,12 +144,39 @@ fn tpdu_size_from_params(mut params: &[u8]) -> usize {
 }
 
 /// Antepone la cabecera de una TPDU de datos (DT) a `payload`.
+///
+/// OJO: no fragmenta. Para TSDUs que pueden superar el TPDU size negociado,
+/// usa [`data_tpdus`] (un peer conforme aborta ante una DT sobredimensionada).
 pub fn data_tpdu(payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(3 + payload.len());
     out.push(0x02); // LI
     out.push(DT_CODE); // DT
     out.push(0x80); // EOT=1, TPDU-NR=0
     out.extend_from_slice(payload);
+    out
+}
+
+/// Trocea un TSDU en las DT TPDUs necesarias para respetar `max_tpdu` (tamaño
+/// máximo de TPDU en octetos, cabecera COTP incluida), marcando **EOT solo en
+/// la última** (ISO 8073 clase 0). Interop: libiec61850 aborta la conexión si
+/// recibe una DT mayor que el TPDU size negociado (p. ej. al servirle un bloque
+/// de fichero de 8 KiB con TPDU de 1024).
+pub fn data_tpdus(payload: &[u8], max_tpdu: usize) -> Vec<Vec<u8>> {
+    let chunk = max_tpdu.saturating_sub(3).max(1);
+    if payload.len() <= chunk {
+        return vec![data_tpdu(payload)];
+    }
+    let mut out = Vec::with_capacity(payload.len().div_ceil(chunk));
+    let mut it = payload.chunks(chunk).peekable();
+    while let Some(c) = it.next() {
+        let eot = it.peek().is_none();
+        let mut t = Vec::with_capacity(3 + c.len());
+        t.push(0x02); // LI
+        t.push(DT_CODE);
+        t.push(if eot { 0x80 } else { 0x00 });
+        t.extend_from_slice(c);
+        out.push(t);
+    }
     out
 }
 
@@ -277,5 +304,42 @@ mod tests {
         let dt = data_tpdu(&payload);
         assert_eq!(&dt[..3], &[0x02, 0xF0, 0x80]);
         assert_eq!(parse_data_tpdu(&dt).unwrap(), &payload);
+    }
+}
+
+#[cfg(test)]
+mod frag_tests {
+    use super::*;
+
+    #[test]
+    fn data_tpdus_fragments_and_reassembles() {
+        // TSDU de 2500 octetos con TPDU de 1024 ⇒ 3 fragmentos, EOT solo al final.
+        let tsdu: Vec<u8> = (0..2500u32).map(|i| (i % 256) as u8).collect();
+        let frags = data_tpdus(&tsdu, DEFAULT_TPDU_SIZE);
+        assert_eq!(frags.len(), 3);
+        for (i, f) in frags.iter().enumerate() {
+            assert!(
+                f.len() <= DEFAULT_TPDU_SIZE,
+                "fragmento {i} excede el TPDU size"
+            );
+            let (payload, eot) = parse_data_tpdu_eot(f).unwrap();
+            assert_eq!(eot, i == frags.len() - 1, "EOT solo en el último");
+            assert!(!payload.is_empty());
+        }
+        // Reensamblado == original.
+        let rebuilt: Vec<u8> = frags
+            .iter()
+            .flat_map(|f| parse_data_tpdu_eot(f).unwrap().0.to_vec())
+            .collect();
+        assert_eq!(rebuilt, tsdu);
+    }
+
+    #[test]
+    fn data_tpdus_small_single_fragment() {
+        let frags = data_tpdus(b"abc", DEFAULT_TPDU_SIZE);
+        assert_eq!(frags.len(), 1);
+        let (p, eot) = parse_data_tpdu_eot(&frags[0]).unwrap();
+        assert_eq!(p, b"abc");
+        assert!(eot);
     }
 }

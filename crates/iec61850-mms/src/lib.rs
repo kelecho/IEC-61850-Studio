@@ -28,9 +28,9 @@ pub use control::{ControlParameters, OrCat, add_cause};
 pub use error::{BerError, DataAccessError, MmsError};
 pub use mapping::{MappingError, mms_to_object_reference, object_reference_to_mms};
 pub use mms::{
-    CommandTermination, FileAttributes, FileChunk, FileDirectory, FileEntry, FileOpen,
-    IdentifyResponse, LastApplError, MmsData, Report, ReportConfig, ReportEntry, StructComponent,
-    TypeSpec, VariableAttributes, WriteResult,
+    CommandTermination, ComtradeRecord, FileAttributes, FileChunk, FileDirectory, FileEntry,
+    FileOpen, IdentifyResponse, LastApplError, MmsData, Report, ReportConfig, ReportEntry,
+    StructComponent, TypeSpec, VariableAttributes, WriteResult,
 };
 
 #[cfg(feature = "client")]

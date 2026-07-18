@@ -172,6 +172,15 @@ impl IsoConnection {
         }
     }
 
+    /// Envía un TSDU de la fase de datos fragmentado en DT TPDUs conformes con
+    /// el TPDU size (ver [`IsoWriter::send_data`]).
+    pub async fn send_data_tsdu(&mut self, tsdu: &[u8]) -> Result<(), MmsError> {
+        for t in cotp::data_tpdus(tsdu, cotp::DEFAULT_TPDU_SIZE) {
+            self.send(&t).await?;
+        }
+        Ok(())
+    }
+
     /// Separa la conexión en mitades independientes de lectura y escritura,
     /// para que una tarea de fondo lea mientras otras envían peticiones.
     pub fn split(self) -> (IsoReader, IsoWriter) {
@@ -233,6 +242,16 @@ impl IsoWriter {
         let frame = tpkt::frame(payload);
         self.half.write_all(&frame).await?;
         self.half.flush().await?;
+        Ok(())
+    }
+
+    /// Envía un **TSDU de la fase de datos** (capa sesión/presentación),
+    /// fragmentándolo en DT TPDUs conformes con el TPDU size (ISO 8073 clase 0)
+    /// — cada fragmento en su propio TPKT.
+    pub async fn send_data(&mut self, tsdu: &[u8]) -> Result<(), MmsError> {
+        for t in cotp::data_tpdus(tsdu, cotp::DEFAULT_TPDU_SIZE) {
+            self.send(&t).await?;
+        }
         Ok(())
     }
 }
