@@ -1,13 +1,15 @@
-# iec61850-tauri
+# IEC 61850 Studio
 
-App **Tauri v2** (UI web React + Vite) de demostración que consume la librería
-`iec61850`: cliente MMS para **conectar a un IED, descubrir/leer variables, ver
-reportes (RCB) en vivo** y **escribir/operar** (con confirmación). El *core* es
-Rust (`src-tauri/`, enlaza la librería y expone comandos); el frontend es web y
-solo invoca esos comandos — la red MMS ocurre toda en Rust.
+> Producto de escritorio (crate `iec61850-tauri`, en `apps/iec61850-tauri/`).
+> Es la **app principal** del proyecto; sustituye al prototipo egui
+> (`apps/iec61850-gui`, obsoleto).
 
-> No publicable (`publish = false`); es un ejemplo de integración alternativo a
-> la app egui (`apps/iec61850-gui`).
+App **Tauri v2** (UI web React + Vite) que consume la librería `iec61850`:
+cliente MMS para **conectar a un IED, descubrir/leer variables, ver reportes
+(RCB) en vivo** y **escribir/operar** (con modo mando y confirmación reforzada),
+más SCL, GOOSE/SV, TLS, IED en vivo y panel de operación. El *core* es Rust
+(`src-tauri/`, enlaza la librería y expone comandos); el frontend es web y solo
+invoca esos comandos — la red MMS ocurre toda en Rust.
 
 ## Requisitos
 

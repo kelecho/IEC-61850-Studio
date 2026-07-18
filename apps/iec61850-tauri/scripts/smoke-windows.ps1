@@ -15,9 +15,9 @@ Write-Host "`n== Smoke test iec61850-tauri (Windows) ==`n"
 
 # 1. Binario instalado
 $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse `
-    -Filter "iec61850-tauri.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    -Filter "iec61850-studio.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($exe) { Pass "binario instalado: $($exe.FullName)" }
-else { Fail "no se encontró iec61850-tauri.exe (instala el .exe NSIS primero)" }
+else { Fail "no se encontró iec61850-studio.exe (instala el .exe NSIS primero)" }
 
 # 2. WebView2 (runtime de la UI)
 $wv = Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\*" `

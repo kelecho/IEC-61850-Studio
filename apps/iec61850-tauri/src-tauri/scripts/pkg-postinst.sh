@@ -5,6 +5,6 @@
 # sin xattrs), la app funciona igual salvo la captura capa 2.
 set -e
 if command -v setcap >/dev/null 2>&1; then
-    setcap cap_net_raw+ep /usr/bin/iec61850-tauri || true
+    setcap cap_net_raw+ep /usr/bin/iec61850-studio || true
 fi
 exit 0

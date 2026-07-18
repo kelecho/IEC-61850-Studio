@@ -17,7 +17,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "IEC 61850 — Cliente MMS (demo)",
+        "IEC 61850 (cliente egui — OBSOLETO, usa IEC 61850 Studio)",
         options,
         Box::new(|cc| {
             let (evt_tx, evt_rx) = std::sync::mpsc::channel();

@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "iec61850-tauri",
+  "productName": "IEC 61850 Studio",
+  "mainBinaryName": "iec61850-studio",
   "version": "0.1.0",
-  "identifier": "com.iec61850.gui",
+  "identifier": "com.iec61850.studio",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "IEC 61850 — Cliente MMS (Tauri)",
+        "title": "IEC 61850 Studio",
         "width": 1100,
         "height": 720
       }

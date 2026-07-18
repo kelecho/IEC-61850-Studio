@@ -1,4 +1,10 @@
-# iec61850-gui
+# iec61850-gui — OBSOLETO
+
+> **Deprecado.** Este cliente egui fue el prototipo inicial y hoy es un
+> **subconjunto estricto** del producto **[IEC 61850 Studio](../iec61850-tauri/)**
+> (app Tauri), que lo engloba y añade SCL, GOOSE/SV, TLS, IED en vivo, multi-IED,
+> panel de operación y mucho más. Se conserva solo como referencia mínima de
+> integración con la librería; no recibe funciones nuevas. **Usa IEC 61850 Studio.**
 
 App de escritorio de **demostración** (egui/eframe) que consume la librería
 `iec61850`: cliente MMS para **conectar a un IED, descubrir y leer variables, ver
