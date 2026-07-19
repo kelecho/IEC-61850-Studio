@@ -10,7 +10,14 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { IconTrash, IconBolt } from "@tabler/icons-react";
+import { IconTrash, IconBolt, IconPencil } from "@tabler/icons-react";
+
+/** Restricciones funcionales escribibles: ajustes y consigna. El resto (medida
+ *  MX, estado ST) es de solo lectura. */
+const WRITABLE_FC = ["SP", "SE", "CF", "SG", "SV"];
+function fcOf(ref: string): string | null {
+  return ref.match(/\[([A-Z]{2})\]$/)?.[1] ?? null;
+}
 import { DRAG_MIME } from "./TreeView";
 
 /** Carta del panel: un componente arrastrado desde el árbol o el detalle. */
@@ -201,7 +208,20 @@ function shortRef(full: string, cardLabel: string): string {
   return dot >= 0 ? noFc.slice(dot + 1) : noFc;
 }
 
-function ValueRow({ full, label, value }: { full: string; label: string; value?: string }) {
+function ValueRow({
+  full,
+  label,
+  value,
+  canWrite,
+  onWrite,
+}: {
+  full: string;
+  label: string;
+  value?: string;
+  /** Permite cambiar el valor con un click (atributo escribible + modo mando). */
+  canWrite: boolean;
+  onWrite: (ref: string, currentValue: string) => void;
+}) {
   const prev = useRef<string | undefined>(value);
   const [flash, setFlash] = useState(false);
   useEffect(() => {
@@ -214,18 +234,23 @@ function ValueRow({ full, label, value }: { full: string; label: string; value?:
     prev.current = value;
   }, [value]);
   const shown = value !== undefined ? fmtLive(full, value) : null;
+  // Valor "en limpio" para prefijar el modal (sin comillas).
+  const clean = (value ?? "").replace(/^"|"$/g, "");
+
   return (
-    <Group gap={8} wrap="nowrap" title={full}>
+    <Group gap={8} wrap="nowrap" title={canWrite ? `${full} — clic para cambiar` : full}>
       <Text size="xs" ff="monospace" c="dimmed" style={{ whiteSpace: "nowrap" }}>
         {label}
       </Text>
       <Box
         px={6}
+        onClick={canWrite ? () => onWrite(full, clean) : undefined}
         style={{
           borderRadius: 4,
           transition: "background-color 400ms ease",
           background: flash ? "var(--mantine-color-yellow-light)" : "transparent",
           minWidth: 0,
+          cursor: canWrite ? "pointer" : "default",
         }}
       >
         <Text
@@ -233,11 +258,16 @@ function ValueRow({ full, label, value }: { full: string; label: string; value?:
           ff="monospace"
           fw={600}
           c={shown ? (shown.color ?? "teal.7") : "dimmed"}
-          style={{ wordBreak: "break-all" }}
+          style={{ wordBreak: "break-all", textDecoration: canWrite ? "underline dotted" : undefined }}
         >
           {shown?.text ?? "—"}
         </Text>
       </Box>
+      {canWrite && (
+        <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => onWrite(full, clean)} title="Cambiar valor">
+          <IconPencil size={12} />
+        </ActionIcon>
+      )}
     </Group>
   );
 }
@@ -317,6 +347,8 @@ export function OperBoard({
   onRemove,
   onClear,
   onOperate,
+  onSelect,
+  onWrite,
 }: {
   cards: BoardCard[];
   values: Map<string, string>;
@@ -325,6 +357,8 @@ export function OperBoard({
   onRemove: (key: string) => void;
   onClear: () => void;
   onOperate: (coRef: string, value: "true" | "false") => void;
+  onSelect: (coRef: string) => void;
+  onWrite: (ref: string, newValue: string) => void;
 }) {
   const [over, setOver] = useState(false);
   return (
@@ -363,7 +397,8 @@ export function OperBoard({
             Arrastra aquí un componente del árbol (DO, control o atributo)
           </Text>
           <Text c="dimmed" size="xs">
-            Verás sus valores en tiempo real; los objetos de control podrán operarse.
+            Verás sus valores en tiempo real. Los controles se operan con botones; los ajustes
+            escribibles se cambian con un clic sobre el valor.
           </Text>
         </Stack>
       ) : (
@@ -405,12 +440,32 @@ export function OperBoard({
                   </Group>
                   <StateBlock card={c} values={values} />
                   <Stack gap={2}>
-                    {rows.map((r) => (
-                      <ValueRow key={r} full={r} label={shortRef(r, c.label)} value={values.get(r)} />
-                    ))}
+                    {rows.map((r) => {
+                      const fc = fcOf(r);
+                      const canWrite = connected && !!fc && WRITABLE_FC.includes(fc);
+                      return (
+                        <ValueRow
+                          key={r}
+                          full={r}
+                          label={shortRef(r, c.label)}
+                          value={values.get(r)}
+                          canWrite={canWrite}
+                          onWrite={onWrite}
+                        />
+                      );
+                    })}
                   </Stack>
                   {c.coRef && (
                     <Group gap="xs" mt={8}>
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        disabled={!connected}
+                        onClick={() => onSelect(c.coRef!)}
+                        title="Seleccionar antes de operar (SBO)"
+                      >
+                        Seleccionar
+                      </Button>
                       <Button
                         size="compact-xs"
                         color="red"

@@ -239,6 +239,8 @@ type Pending = {
   danger?: boolean;
   /** Aparato/objeto en lenguaje legible, para la cabecera del diálogo. */
   device?: string;
+  /** Si está presente, el diálogo edita el valor a escribir en esta referencia. */
+  writeRef?: string;
 };
 type Sort<K extends string> = { key: K; dir: 1 | -1 };
 
@@ -453,12 +455,11 @@ export default function App() {
 
   const [writeKind, setWriteKind] = useState("Float");
   const [writeVal, setWriteVal] = useState("");
-  const [ctrlRef, setCtrlRef] = useState("");
-  const [ctrlKind, setCtrlKind] = useState("Bool");
-  const [ctrlVal, setCtrlVal] = useState("true");
   const [pending, setPending] = useState<Pending | null>(null);
   // Texto tecleado en el diálogo de maniobra (barrera anti-clic accidental).
   const [confirmText, setConfirmText] = useState("");
+  // Valor editable en el diálogo de escritura (clic sobre un valor de la tarjeta).
+  const [editVal, setEditVal] = useState("");
   // Modo mando: la app arranca en SOLO LECTURA; escribir/operar/publicar exige
   // armarlo explícitamente. Evita maniobras accidentales en un IED productivo.
   const [commandMode, setCommandMode] = useState(false);
@@ -1080,9 +1081,10 @@ export default function App() {
       fail(e);
     }
   }
-  async function doSelect() {
+  // Seleccionar (SBO) un control por su referencia (desde la tarjeta del panel).
+  async function selectFromBoard(coRef: string) {
     try {
-      const r = await invoke<string>("select", { reference: ctrlRef });
+      const r = await invoke<string>("select", { reference: coRef });
       ok(`select: ${r}`);
     } catch (e) {
       fail(e);
@@ -1316,21 +1318,27 @@ export default function App() {
     });
   }
 
-  function askOperate() {
+  // Infiere el tipo MMS del texto tecleado en la tarjeta (para escribir ajustes).
+  function inferKind(v: string): string {
+    const t = v.trim();
+    if (/^(true|false|on|off|0|1)$/i.test(t)) return /^(0|1)$/.test(t) ? "Int" : "Bool";
+    if (/^-?\d+$/.test(t)) return "Int";
+    if (/^-?\d*\.\d+([eE][-+]?\d+)?$/.test(t)) return "Float";
+    return "Text";
+  }
+  // Escribir un valor desde la tarjeta del panel (clic sobre el valor): abre el
+  // modal con el valor actual editable; al confirmar, escribe.
+  function writeFromBoard(reference: string, currentValue: string) {
     if (!commandMode) return;
-    const reference = ctrlRef;
-    const kind = ctrlKind;
-    const value = ctrlVal;
     setConfirmText("");
+    setEditVal(currentValue);
     setPending({
-      title: "Confirmar maniobra",
+      title: "Cambiar valor",
       device: deviceLabel(reference),
       danger: dangerZone,
-      body: `Operar (operate) el control\n  ${reference}\ncon ctlVal ${value} (${kind})`,
-      run: async () => {
-        await invoke("operate", { reference, kind, value });
-        ok("operado");
-      },
+      writeRef: reference,
+      body: `Escribir un nuevo valor en\n  ${reference}`,
+      run: async () => {}, // la escritura la hace confirmPending con editVal
     });
   }
   // Nombre legible del aparato a partir de la referencia (sin FC): p. ej.
@@ -1349,11 +1357,19 @@ export default function App() {
   async function confirmPending() {
     const p = pending;
     if (p?.danger && confirmText.trim().toUpperCase() !== CONFIRM_WORD) return;
+    if (p?.writeRef && editVal.trim() === "") return; // valor obligatorio
     setPending(null);
     setConfirmText("");
     if (p) {
       try {
-        await p.run();
+        if (p.writeRef) {
+          const kind = inferKind(editVal);
+          await invoke("write", { reference: p.writeRef, kind, value: editVal.trim() });
+          ok("escrito");
+          loadDo(p.writeRef);
+        } else {
+          await p.run();
+        }
       } catch (e) {
         fail(e);
       }
@@ -2197,7 +2213,8 @@ export default function App() {
                 </Paper>
               )}
               <Text size="sm" c="dimmed">
-                Arrastra componentes del árbol al panel para verlos y operarlos en vivo. Cada
+                Arrastra componentes del árbol al panel. Los controles se operan con sus botones
+                (Cerrar/Abrir); los ajustes escribibles se cambian con un clic sobre el valor. Cada
                 maniobra pide confirmación; sobre un equipo en servicio, además exige teclear «{CONFIRM_WORD}».
               </Text>
               <OperBoard
@@ -2208,22 +2225,9 @@ export default function App() {
                 onRemove={removeCard}
                 onClear={clearBoard}
                 onOperate={operateFromBoard}
+                onSelect={selectFromBoard}
+                onWrite={writeFromBoard}
               />
-              <Stack gap="sm" maw={520}>
-                <TextInput size="xs" label="Objeto de control [CO]" placeholder="selecciona un control en el árbol o escribe su referencia" value={ctrlRef} onChange={(e) => setCtrlRef(e.currentTarget.value)} />
-                <Group align="end" gap="xs">
-                  <Select size="xs" w={100} label="Tipo" data={KINDS.filter((k) => k !== "Text")} value={ctrlKind} onChange={(v) => setCtrlKind(v ?? "Bool")} allowDeselect={false} />
-                  <TextInput size="xs" w={120} label="ctlVal" value={ctrlVal} onChange={(e) => setCtrlVal(e.currentTarget.value)} />
-                  <Button size="xs" variant="default" disabled={!connected || !ctrlRef} onClick={doSelect}>
-                    Seleccionar
-                  </Button>
-                  <Tooltip label="Arma el modo mando para operar" disabled={commandMode} position="top">
-                    <Button size="xs" color="orange" disabled={!connected || !ctrlRef || !commandMode} onClick={askOperate}>
-                      Operar…
-                    </Button>
-                  </Tooltip>
-                </Group>
-              </Stack>
             </Stack>
           </Tabs.Panel>
 
@@ -2975,6 +2979,20 @@ export default function App() {
         <Text size="sm" style={{ whiteSpace: "pre-wrap" }} ff="monospace">
           {pending?.body}
         </Text>
+        {pending?.writeRef && (
+          <TextInput
+            mt="md"
+            size="sm"
+            label="Nuevo valor"
+            description="El tipo (bool / entero / decimal) se deduce del texto."
+            value={editVal}
+            onChange={(e) => setEditVal(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !pending?.danger) confirmPending();
+            }}
+            autoFocus={!pending?.danger}
+          />
+        )}
         {pending?.danger && (
           <TextInput
             mt="md"
@@ -2998,10 +3016,13 @@ export default function App() {
           </Button>
           <Button
             color={pending?.danger ? "red" : "orange"}
-            disabled={pending?.danger && confirmText.trim().toUpperCase() !== CONFIRM_WORD}
+            disabled={
+              (pending?.danger && confirmText.trim().toUpperCase() !== CONFIRM_WORD) ||
+              (!!pending?.writeRef && editVal.trim() === "")
+            }
             onClick={confirmPending}
           >
-            {pending?.danger ? "Ejecutar maniobra" : "Confirmar"}
+            {pending?.danger ? "Ejecutar" : pending?.writeRef ? "Escribir" : "Confirmar"}
           </Button>
         </Group>
       </Modal>
