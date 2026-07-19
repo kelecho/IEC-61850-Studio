@@ -30,8 +30,6 @@ import {
   TextInput,
   Title,
   Tooltip,
-  useComputedColorScheme,
-  useMantineColorScheme,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -53,7 +51,6 @@ import {
   IconLock,
   IconShieldCheck,
   IconShieldLock,
-  IconMoon,
   IconNetwork,
   IconRss,
   IconPlayerPlay,
@@ -62,7 +59,6 @@ import {
   IconRefresh,
   IconScan,
   IconSearch,
-  IconSun,
   IconPlugConnectedX,
   IconTrash,
 } from "@tabler/icons-react";
@@ -388,8 +384,6 @@ type RcbForm = {
 };
 
 export default function App() {
-  const { setColorScheme } = useMantineColorScheme();
-  const scheme = useComputedColorScheme("light");
 
   const [addr, setAddr] = useState("");
   const [conns, setConns] = useState<ConnInfo[]>([]);
@@ -1624,14 +1618,6 @@ export default function App() {
                 </Stack>
               </Popover.Dropdown>
             </Popover>
-            <ActionIcon
-              variant="default"
-              size="lg"
-              title="Tema claro/oscuro"
-              onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
-            >
-              {scheme === "dark" ? <IconSun size={16} /> : <IconMoon size={16} />}
-            </ActionIcon>
           </Group>
         </div>
         {commandMode && (

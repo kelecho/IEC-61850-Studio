@@ -321,7 +321,16 @@ function StateBlock({ card, values }: { card: BoardCard; values: Map<string, str
     >
       <SwitchGlyph state={state} />
       <Stack gap={2}>
-        <Text fw={800} size="lg" c={`${meta.color}.6`} style={{ lineHeight: 1 }}>
+        <Text
+          fw={800}
+          size="lg"
+          c={`${meta.color}.5`}
+          style={{
+            lineHeight: 1,
+            textShadow: `0 0 12px var(--mantine-color-${meta.color}-7)`,
+            letterSpacing: "0.02em",
+          }}
+        >
           {meta.label}
         </Text>
         <Group gap={6}>

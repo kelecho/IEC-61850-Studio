@@ -10,18 +10,19 @@ import App from "./App";
 import "./styles.css";
 
 // Paleta oscura "acero" (azul frío, profunda): el fondo de un panel de
-// instrumentación, no el gris genérico de Mantine.
+// instrumentación retroiluminado, no el gris genérico de Mantine. La app es
+// solo-oscuro (una consola de sala de control), así que esta paleta es única.
 const dark: MantineColorsTuple = [
-  "#C9D1DC",
-  "#A8B2C0",
-  "#8793A4",
-  "#67748A",
-  "#495365",
-  "#333C4C",
-  "#232B38",
-  "#181E28",
-  "#10151D",
-  "#0B0F15",
+  "#CAD3DF", // 0 · texto principal
+  "#A7B2C1", // 1
+  "#8593A6", // 2 · texto atenuado
+  "#65728A", // 3
+  "#454F63", // 4 · bordes
+  "#2C3547", // 5 · hover / borde activo
+  "#1A2231", // 6 · superficie / default
+  "#111722", // 7 · cuerpo (fondo)
+  "#0C1017", // 8 · paneles hundidos
+  "#07090E", // 9 · el más profundo
 ];
 
 // Color de marca: cobre de embarrado. El conductor es la identidad del
@@ -48,7 +49,7 @@ const theme = createTheme({
     fontWeight: "650",
   },
   primaryColor: "brand",
-  primaryShade: { light: 7, dark: 5 },
+  primaryShade: 5,
   // El cobre es claro: los rellenos deciden texto oscuro/claro por luminancia
   // (como un LED ámbar serigrafiado en negro).
   autoContrast: true,
@@ -85,7 +86,7 @@ const theme = createTheme({
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="dark">
+    <MantineProvider theme={theme} forceColorScheme="dark">
       <Notifications position="top-right" />
       <App />
     </MantineProvider>

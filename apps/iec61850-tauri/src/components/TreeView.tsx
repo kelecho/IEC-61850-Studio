@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Box, Group, Text, UnstyledButton, useComputedColorScheme } from "@mantine/core";
+import { Badge, Box, Group, Text, UnstyledButton } from "@mantine/core";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import type { TreeNode } from "../model";
 import { collectLeafRefs } from "../model";
@@ -218,9 +218,8 @@ const Row = memo(function Row({
 
 export function TreeView({ data, selected, values, forceOpen, maxDepth, onSelect }: Props) {
   const depthMax = maxDepth ?? Number.POSITIVE_INFINITY;
-  const scheme = useComputedColorScheme("light");
-  // En tema claro subimos el tono (.7) para más contraste; en oscuro .6.
-  const shade = scheme === "light" ? "7" : "6";
+  // Tono del valor en vivo (tema oscuro fijo).
+  const shade = "6";
 
   // Modelos pequeños: LD y LN desplegados de inicio (comportamiento clásico).
   // Modelos grandes (CID/SCD reales): todo plegado — el usuario abre lo que mira.
