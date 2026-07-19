@@ -1509,7 +1509,7 @@ export default function App() {
           <Group gap="xs" wrap="nowrap">
             {connected && (
               <Badge color={activeIsSim ? "grape" : "red"} variant={activeIsSim ? "light" : "filled"}>
-                {activeIsSim ? "SIMULADOR" : "IED REAL"}
+                {activeIsSim ? "PRUEBAS" : "EN SERVICIO"}
               </Badge>
             )}
             <Badge color={connected ? "teal" : "gray"} variant="light">
@@ -1635,8 +1635,8 @@ export default function App() {
           >
             <IconShieldLock size={15} />
             {dangerZone
-              ? `MODO MANDO ARMADO — IED REAL (${activeConnId}). Escribir y operar están habilitados.`
-              : `Modo mando armado — simulador (${activeConnId}).`}
+              ? `MODO MANDO ARMADO — EQUIPO EN SERVICIO (${activeConnId}). Escribir y operar están habilitados.`
+              : `Modo mando armado — entorno de pruebas (${activeConnId}).`}
             <Button
               size="compact-xs"
               variant="white"
@@ -2188,7 +2188,7 @@ export default function App() {
                     <IconShieldCheck size={18} color="var(--mantine-color-teal-6)" />
                     <Text size="sm">
                       <b>Solo lectura.</b> Para escribir u operar, arma el modo mando con el escudo
-                      de la cabecera. {dangerZone && "Estás conectado a un IED real."}
+                      de la cabecera. {dangerZone && "Estás conectado a un equipo en servicio."}
                     </Text>
                     <Button size="compact-xs" color="red" ml="auto" onClick={() => setCommandMode(true)}>
                       Armar mando
@@ -2198,7 +2198,7 @@ export default function App() {
               )}
               <Text size="sm" c="dimmed">
                 Arrastra componentes del árbol al panel para verlos y operarlos en vivo. Cada
-                maniobra pide confirmación; sobre un IED real, además exige teclear «{CONFIRM_WORD}».
+                maniobra pide confirmación; sobre un equipo en servicio, además exige teclear «{CONFIRM_WORD}».
               </Text>
               <OperBoard
                 cards={board}
@@ -2776,7 +2776,7 @@ export default function App() {
           <span>{connected ? `Conectado a ${activeConnId ?? addr}` : "Sin conexión"}</span>
           {connected && (
             <span style={{ color: activeIsSim ? "var(--mantine-color-grape-5)" : "var(--mantine-color-red-5)", fontWeight: 600 }}>
-              {activeIsSim ? "SIMULADOR" : "IED REAL"}
+              {activeIsSim ? "PRUEBAS" : "EN SERVICIO"}
             </span>
           )}
           {connected && (
@@ -2965,11 +2965,11 @@ export default function App() {
         )}
         {pending?.danger ? (
           <Badge color="red" variant="light" mb="xs">
-            IED REAL · {activeConnId}
+            EQUIPO EN SERVICIO · {activeConnId}
           </Badge>
         ) : (
           <Badge color="grape" variant="light" mb="xs">
-            Simulador · {activeConnId}
+            ENTORNO DE PRUEBAS · {activeConnId}
           </Badge>
         )}
         <Text size="sm" style={{ whiteSpace: "pre-wrap" }} ff="monospace">
@@ -2979,7 +2979,7 @@ export default function App() {
           <TextInput
             mt="md"
             size="sm"
-            label={`Maniobra sobre un IED real: teclea ${CONFIRM_WORD} para habilitar`}
+            label={`Maniobra sobre un equipo en servicio: teclea ${CONFIRM_WORD} para habilitar`}
             placeholder={CONFIRM_WORD}
             value={confirmText}
             onChange={(e) => setConfirmText(e.currentTarget.value)}
