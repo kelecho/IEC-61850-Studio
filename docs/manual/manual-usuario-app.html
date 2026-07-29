@@ -59,9 +59,10 @@
   <div class="band"></div>
   <h1>IEC 61850 Studio</h1>
   <div class="sub">Cliente de diagnóstico y simulación IEC&nbsp;61850<br>
-  Explorador MMS · Reportes en vivo · Control · GOOSE / Sampled Values · Ficheros</div>
+  Explorador MMS · Reportes en vivo · Control · Grupos de ajuste · Logs ·
+  GOOSE / Sampled Values con fasores · Ficheros · Auditoría</div>
   <div class="meta">
-    Versión 0.1.1 · julio 2026<br>
+    Versión 0.1.2 · julio 2026<br>
     Librería <code>iec61850-rs</code> (Rust) — cliente y servidor MMS, SCL, GOOSE, SV, IEC&nbsp;62351<br>
     Ejemplos de este manual: CID real <code>LT-SJA (ES-VAL).cid</code> (ABB/Hitachi, exportado con IET600)
   </div>
@@ -73,18 +74,22 @@
   <div><span class="n">1</span> Qué es la aplicación</div>
   <div><span class="n">2</span> Arquitectura</div>
   <div><span class="n">3</span> Inicio rápido en 5 pasos</div>
-  <div><span class="n">4</span> Conexión a un IED</div>
-  <div><span class="n">5</span> Navegación del modelo de datos</div>
-  <div><span class="n">6</span> Lectura de datos y polling</div>
-  <div><span class="n">7</span> Escritura de valores</div>
-  <div><span class="n">8</span> Reportes (RCB) en vivo</div>
-  <div><span class="n">9</span> Operaciones de control</div>
-  <div><span class="n">10</span> Monitor GOOSE y Sampled Values</div>
-  <div><span class="n">11</span> Comparar SCL ↔ IED real</div>
-  <div><span class="n">12</span> Transferencia de ficheros (COMTRADE)</div>
-  <div><span class="n">13</span> Simular un IED en la red</div>
-  <div><span class="n">14</span> Seguridad: TLS / mTLS (IEC 62351-3)</div>
-  <div><span class="n">15</span> Solución de problemas</div>
+  <div><span class="n">4</span> La interfaz: zonas de trabajo y modo mando</div>
+  <div><span class="n">5</span> Conexión a un IED</div>
+  <div><span class="n">6</span> Navegación del modelo de datos</div>
+  <div><span class="n">7</span> Lectura de datos y polling</div>
+  <div><span class="n">8</span> Escritura de valores</div>
+  <div><span class="n">9</span> Reportes (RCB) en vivo</div>
+  <div><span class="n">10</span> Operaciones de control</div>
+  <div><span class="n">11</span> Grupos de ajuste (SGCB)</div>
+  <div><span class="n">12</span> Logs del IED (ReadJournal)</div>
+  <div><span class="n">13</span> Bus de estación: GOOSE y Sampled Values</div>
+  <div><span class="n">14</span> Comparar SCL ↔ IED real</div>
+  <div><span class="n">15</span> Transferencia de ficheros (COMTRADE)</div>
+  <div><span class="n">16</span> Auditoría de operaciones</div>
+  <div><span class="n">17</span> Simular un IED en la red</div>
+  <div><span class="n">18</span> Seguridad: TLS / mTLS (IEC 62351-3)</div>
+  <div><span class="n">19</span> Solución de problemas</div>
 </div>
 
 <!-- ============ 1 ============ -->
@@ -93,14 +98,17 @@
 dispositivos IEC&nbsp;61850 (IEDs de protección y control de subestaciones). Con ella puede:</p>
 <table>
   <tr><th>Tarea</th><th>Dónde</th></tr>
-  <tr><td>Conectar a un IED real o simulado (MMS, TCP 102), con o sin TLS</td><td>Barra de conexión</td></tr>
+  <tr><td>Conectar a un IED real o simulado (MMS, TCP 102), con o sin TLS, y guardar la conexión como perfil de un clic</td><td>Barra de conexión</td></tr>
   <tr><td>Explorar su modelo de datos (LD → LN → DO → DA) desde la red o desde un fichero SCL</td><td>Panel de navegación</td></tr>
-  <tr><td>Leer valores sueltos, en tabla de vigilancia o con refresco periódico</td><td>Pestañas <i>Datos</i> y <i>Watch</i></td></tr>
-  <tr><td>Habilitar RCBs y ver los reportes espontáneos según llegan</td><td>Pestaña <i>Reportes</i></td></tr>
-  <tr><td>Escribir valores y operar objetos de control (con confirmación)</td><td>Pestañas <i>Datos</i> y <i>Control</i></td></tr>
-  <tr><td>Vigilar y operar aparatos con tarjetas en vivo (drag &amp; drop, iconografía de interruptor)</td><td>Pestaña <i>Control</i> · panel de operación</td></tr>
-  <tr><td>Capturar y publicar tramas GOOSE y Sampled Values en la capa 2</td><td>Pestañas <i>GOOSE</i> y <i>SV</i></td></tr>
-  <tr><td>Descargar registros de perturbación (COMTRADE) del IED</td><td>Pestaña <i>Ficheros</i></td></tr>
+  <tr><td>Leer valores sueltos, en lista de vigilancia o con refresco periódico</td><td>Secciones <i>Datos</i> y <i>Vigilar</i></td></tr>
+  <tr><td>Habilitar RCBs y ver los reportes espontáneos según llegan</td><td>Sección <i>Reportes</i></td></tr>
+  <tr><td>Escribir valores y operar objetos de control (modo mando + confirmación)</td><td>Secciones <i>Datos</i> y <i>Control</i></td></tr>
+  <tr><td>Vigilar y operar aparatos con tarjetas en vivo (drag &amp; drop, iconografía de interruptor)</td><td>Sección <i>Control</i> · panel de operación</td></tr>
+  <tr><td>Conmutar el grupo de ajustes activo y editar valores por grupo</td><td>Sección <i>Grupos de ajuste</i></td></tr>
+  <tr><td>Leer el registro histórico persistido en el IED (ReadJournal)</td><td>Sección <i>Logs del IED</i></td></tr>
+  <tr><td>Capturar y publicar GOOSE / Sampled Values, con diff de datos entre tramas y fasores</td><td>Sección <i>Bus de estación</i></td></tr>
+  <tr><td>Descargar registros de perturbación (COMTRADE) del IED</td><td>Sección <i>Ficheros</i></td></tr>
+  <tr><td>Revisar quién hizo qué desde esta estación (conexiones, escrituras, maniobras)</td><td>Sección <i>Auditoría</i></td></tr>
   <tr><td>Servir cualquier SCL como <b>IED en vivo</b> (uno o varios, visibles en la red) sin hardware ni línea de comandos</td><td>Entorno de pruebas</td></tr>
 </table>
 <div class="note"><b>Datos de ejemplo.</b> Las capturas y valores de este manual provienen de un
@@ -157,15 +165,47 @@ solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</cod
       Sin SCL, use el <i>Simulador de ejemplo</i> embebido.</li>
   <li><b>Conectar</b>: escriba <code>127.0.0.1:10102</code> (o la IP del IED, puerto 102) y pulse
       <i>Conectar</i>. El estado pasa a <b>asociado</b> y se descubre el modelo.</li>
-  <li><b>Explorar</b>: despliegue el árbol LD → LN → DO y seleccione un objeto: la pestaña
+  <li><b>Explorar</b>: despliegue el árbol LD → LN → DO y seleccione un objeto: la sección
       <i>Datos</i> muestra sus atributos con valores.</li>
   <li><b>Ver datos vivos</b>: active <i>Polling</i> (p. ej. 1000 ms) o habilite un RCB en
       <i>Reportes</i> para recibir cambios espontáneos.</li>
 </ol>
+<div class="note"><b>La app arranca en solo lectura.</b> Para escribir, operar o publicar en el
+bus hay que <b>armar el modo mando</b> (icono de escudo, §4.2) — así una sesión de diagnóstico
+no puede tocar el proceso por accidente.</div>
 
 <!-- ============ 4 ============ -->
-<h2 class="pagebreak">4 · Conexión a un IED</h2>
-<h3>4.1 Barra de conexión</h3>
+<h2>4 · La interfaz: zonas de trabajo y modo mando</h2>
+<h3>4.1 Tres zonas de trabajo</h3>
+<p>El carril izquierdo agrupa las secciones según el ritmo de uso:</p>
+<table>
+  <tr><th>Zona</th><th>Secciones</th><th>Para qué</th></tr>
+  <tr><td><b>Operación</b></td><td>Resumen · Datos · Control · Vigilar · Grupos de ajuste</td>
+      <td>lo que un operador usa a diario sobre el IED activo</td></tr>
+  <tr><td><b>Tiempo real</b></td><td>Reportes (RCB) · Logs del IED · Bus de estación (GOOSE/SV)</td>
+      <td>flujos que llegan solos y registro histórico</td></tr>
+  <tr><td><b>Ingeniería</b></td><td>Comparar SCL ↔ online · Ficheros · Auditoría</td>
+      <td>puesta en marcha, verificación y trazabilidad</td></tr>
+</table>
+<p>La <b>barra de estado</b> inferior resume en todo momento: conexión activa, si el IED es de
+<b>PRUEBAS</b> (simulador arrancado por la app) o está <b>EN SERVICIO</b> (cualquier otro),
+modo mando, reportes recibidos y estado del polling (avisa en rojo si dejó de refrescar).</p>
+
+<h3>4.2 Modo mando y barreras de seguridad</h3>
+<ul>
+  <li>La app arranca <b>desarmada</b> (solo lectura). El icono de <b>escudo</b> de la cabecera
+  arma el modo mando; se desarma solo al cambiar de IED activo.</li>
+  <li>Toda escritura o maniobra pide <b>confirmación</b> en un diálogo que identifica el aparato
+  en lenguaje de operador (LD · LN · DO y su significado).</li>
+  <li>Sobre un IED <b>EN SERVICIO</b> la barrera es reforzada: además hay que teclear la palabra
+  <b>OPERAR</b>. Sobre un simulador de PRUEBAS basta la confirmación simple.</li>
+  <li>Publicar GOOSE/SV de demo en el bus también exige modo mando (inyecta tramas reales).</li>
+  <li>Todo queda anotado en la <b>auditoría local</b> (§16), incluidos los rechazos del IED.</li>
+</ul>
+
+<!-- ============ 5 ============ -->
+<h2 class="pagebreak">5 · Conexión a un IED</h2>
+<h3>5.1 Barra de conexión</h3>
 <figure class="fig">
 <svg viewBox="0 0 720 64" width="100%" xmlns="http://www.w3.org/2000/svg">
   <rect x="0" y="0" width="720" height="64" rx="8" fill="#f4f3f0" stroke="#e3e2dd"/>
@@ -191,7 +231,7 @@ solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</cod
   <li><b>Multi-conexión</b> — puede mantener varias asociaciones a la vez y cerrarlas una a una.</li>
 </ul>
 
-<h3>4.2 Escaneo de red</h3>
+<h3>5.2 Escaneo de red</h3>
 <p>El diálogo de escaneo busca IEDs de dos maneras:</p>
 <table>
   <tr><th>Modo</th><th>Qué hace</th><th>Ejemplo de resultado</th></tr>
@@ -203,7 +243,17 @@ solo invoca comandos del núcleo, que enlaza la librería <code>iec61850-rs</cod
       <td class="mono">01:0c:cd:01:00:05 · gcb_ESTADO_IED · APPID 0x3005</td></tr>
 </table>
 
-<h3>4.3 Entorno de pruebas: IEDs en vivo (sin hardware)</h3>
+<h3>5.3 Conexiones guardadas</h3>
+<p>El icono de <b>marcador</b> junto a la dirección gestiona <b>perfiles de conexión</b>
+persistentes: guarde la dirección tecleada (con su configuración TLS si está activa) bajo un
+nombre — «Bahía 3 · SEL-451» — y reconéctese después con <b>un clic</b>, sin reteclear IP ni
+rutas de certificados. Los perfiles sobreviven al cierre de la app
+(<code>connections.json</code> en el directorio de configuración del usuario).</p>
+<div class="note"><b>Certificados portables.</b> En el diálogo TLS, <i>«Importar los PEM a la
+app»</i> copia CA/cert/clave a la carpeta gestionada de la app y apunta los campos a esas
+copias: el perfil guardado sigue funcionando aunque mueva o borre los ficheros originales.</div>
+
+<h3>5.4 Entorno de pruebas: IEDs en vivo (sin hardware)</h3>
 <p>El diálogo del matraz sirve <b>cualquier fichero SCL como IED MMS real, desde la propia app y
 sin línea de comandos</b>:</p>
 <ul>
@@ -218,10 +268,10 @@ sin línea de comandos</b>:</p>
   del modelo, para que polling y reportes muestren datos vivos.</li>
 </ul>
 <p>Sin SCL propio, el botón <i>Simulador de ejemplo</i> arranca el IED embebido con un modelo de
-demostración. Existe también la variante <i>Iniciar sim TLS</i> con certificados de prueba (§14).</p>
+demostración. El botón <i>Probar TLS con el simulador</i> del diálogo TLS hace lo mismo con mTLS y certificados de prueba (§18).</p>
 
-<!-- ============ 5 ============ -->
-<h2>5 · Navegación del modelo de datos</h2>
+<!-- ============ 6 ============ -->
+<h2>6 · Navegación del modelo de datos</h2>
 <p>El panel izquierdo tiene tres categorías: <b>Modelo</b> (árbol jerárquico), <b>Datasets</b> y
 <b>Reports</b> (RCBs descubiertos). El árbol puede alimentarse de la <b>red</b> (lo que anuncia el
 IED) o de un <b>fichero SCL</b> (con tipos, CDC y descripciones de ingeniería).</p>
@@ -278,9 +328,9 @@ LN <code>CVMMXN1</code> y sus DOs con badge de CDC y valor en vivo.</figcaption>
   <li>Al seleccionar un DO, el panel derecho lista sus atributos (stVal, q, t, mag.f…) con su FC.</li>
 </ul>
 
-<!-- ============ 6 ============ -->
-<h2 class="pagebreak">6 · Lectura de datos y polling</h2>
-<p>Seleccione un DO en el árbol: la pestaña <b>Datos</b> muestra la estructura con cada atributo,
+<!-- ============ 7 ============ -->
+<h2 class="pagebreak">7 · Lectura de datos y polling</h2>
+<p>Seleccione un DO en el árbol: la sección <b>Datos</b> muestra la estructura con cada atributo,
 su FC (badge), su tipo y su valor. Pulse un atributo para fijarlo como referencia activa.</p>
 <table>
   <tr><th class="mono">Atributo</th><th>FC</th><th class="mono">Valor</th><th>Significado</th></tr>
@@ -289,15 +339,15 @@ su FC (badge), su tipo y su valor. Pulse un atributo para fijarlo como referenci
   <tr><td class="mono">TEMPLATEMON/CVMMXN1.Watt.t</td><td>MX</td><td class="mono">2026-07-18 13:05:04.500</td><td>marca de tiempo</td></tr>
   <tr><td class="mono">TEMPLATELD0/LLN0.Beh.stVal</td><td>ST</td><td class="mono">1 (on)</td><td>comportamiento del LD</td></tr>
 </table>
-<h3>Watch (tabla de vigilancia)</h3>
-<p>Añada referencias a la pestaña <b>Watch</b> para verlas juntas. Con <b>Polling</b> activo
+<h3>Vigilar (lista de vigilancia)</h3>
+<p>Añada referencias a la sección <b>Vigilar</b> para verlas juntas. Con <b>Polling</b> activo
 (mínimo 200 ms) la app relee periódicamente las referencias vigiladas y las del DO seleccionado;
-los valores se actualizan en el árbol, en <i>Datos</i> y en <i>Watch</i>.</p>
+los valores se actualizan en el árbol, en <i>Datos</i> y en <i>Vigilar</i>.</p>
 <div class="note">El polling es <b>lectura MMS periódica</b> (sondeo). Para cambios espontáneos
-sin sondear, use los reportes (§8): el IED empuja los datos cuando cambian.</div>
+sin sondear, use los reportes (§9): el IED empuja los datos cuando cambian.</div>
 
-<!-- ============ 7 ============ -->
-<h2>7 · Escritura de valores</h2>
+<!-- ============ 8 ============ -->
+<h2>8 · Escritura de valores</h2>
 <p>Con un atributo escribible seleccionado (FC <code>SP</code>, <code>SE</code>, <code>CF</code>…),
 elija el tipo (<code>Float</code>, <code>Int</code>, <code>Bool</code>, <code>String</code>…),
 escriba el valor y pulse <b>Escribir</b>. La app pide <b>confirmación</b> antes de enviar:
@@ -306,8 +356,8 @@ muestra referencia, valor actual y valor nuevo.</p>
 proceso. Las escrituras rechazadas por el IED se muestran con su <code>DataAccessError</code>
 (p. ej. <code>object-access-denied</code> si el rol/RBAC no lo permite).</div>
 
-<!-- ============ 8 ============ -->
-<h2>8 · Reportes (RCB) en vivo</h2>
+<!-- ============ 9 ============ -->
+<h2>9 · Reportes (RCB) en vivo</h2>
 <p>La categoría <b>Reports</b> del panel izquierdo lista los RCBs descubiertos. Al elegir uno se
 carga su configuración (RptID, DatSet, ConfRev, TrgOps, OptFlds, IntgPd, BufTm) en un formulario
 editable. <b>Habilitar</b> escribe la configuración y pone <code>RptEna=true</code>; desde ese
@@ -359,9 +409,9 @@ momento los reportes entrantes aparecen en la tabla según llegan.</p>
   <code>temporarily-unavailable</code>.</li>
 </ul>
 
-<!-- ============ 9 ============ -->
-<h2 class="pagebreak">9 · Operaciones de control</h2>
-<p>La pestaña <b>Control</b> opera objetos controlables (CDC <code>SPC</code>, <code>DPC</code>…)
+<!-- ============ 10 ============ -->
+<h2 class="pagebreak">10 · Operaciones de control</h2>
+<p>La sección <b>Control</b> opera objetos controlables (CDC <code>SPC</code>, <code>DPC</code>…)
 según su <code>ctlModel</code>:</p>
 <table>
   <tr><th>ctlModel</th><th>Modelo</th><th>Flujo en la app</th></tr>
@@ -375,8 +425,8 @@ según su <code>ctlModel</code>:</p>
 Cada operación pide <b>confirmación explícita</b> y el resultado (o el <code>AddCause</code> del
 rechazo: 18 <i>select-failed</i>, 10 <i>blocked-by-interlocking</i>…) se muestra en una notificación.</p>
 
-<h3>9.1 Panel de operación (drag &amp; drop)</h3>
-<p>La parte superior de la pestaña <b>Control</b> es un <b>panel de operación</b>: arrastre un
+<h3>10.1 Panel de operación (drag &amp; drop)</h3>
+<p>La parte superior de la sección <b>Control</b> es un <b>panel de operación</b>: arrastre un
 componente desde el árbol (un DO como <code>Pos</code> o <code>SPCSO1</code>, un control o un
 atributo suelto del panel de detalle) y suéltelo en la zona punteada. Cada componente se convierte
 en una <b>tarjeta con sus valores en tiempo real</b> (el sondeo se activa solo al soltar):</p>
@@ -466,10 +516,57 @@ CDC del componente — <code>Dbpos</code> (posición doble, DPC/DPS) o booleano 
   debajo del panel para casos avanzados (INC, valores enteros, etc.).</li>
 </ul>
 
-<!-- ============ 10 ============ -->
-<h2>10 · Monitor GOOSE y Sampled Values</h2>
-<p>Estas pestañas trabajan en la <b>capa 2</b> (Ethernet): elija la interfaz de red y pulse
-<i>Iniciar captura</i>. Requiere permisos de captura (<code>setcap</code> o root; en Windows, Npcap).</p>
+<!-- ============ 11 ============ -->
+<h2>11 · Grupos de ajuste (SGCB)</h2>
+<p>Las protecciones con <b>grupos de ajuste</b> (IEC 61850-7-2, bloque <code>SGCB</code> en
+<code>LLN0</code>) mantienen varios juegos de settings y uno <b>activo</b>. La sección
+<i>Grupos de ajuste</i> descubre el SGCB de cada dispositivo lógico y muestra una tarjeta con:
+grupo <b>activo</b>, grupo <b>en edición</b> y <b>total</b> de grupos.</p>
+<table>
+  <tr><th>Botón</th><th>Servicio 7-2</th><th>Efecto</th><th>Barrera</th></tr>
+  <tr><td><b>Activar</b></td><td class="mono">SelectActiveSG</td>
+      <td>la protección pasa a usar los valores del grupo elegido</td>
+      <td>modo mando + confirmación (reforzada si EN SERVICIO)</td></tr>
+  <tr><td><b>Editar</b></td><td class="mono">SelectEditSG</td>
+      <td>elige el grupo cuyo buffer reciben las escrituras FC=SE (sin efecto en vivo)</td>
+      <td>modo mando</td></tr>
+  <tr><td><b>Confirmar edición</b></td><td class="mono">ConfirmEditSGValues</td>
+      <td>persiste los valores pendientes al grupo en edición</td>
+      <td>modo mando + confirmación</td></tr>
+</table>
+<p><b>Flujo típico</b> para cambiar un ajuste del grupo 2 sin tocar el activo:</p>
+<ol>
+  <li><i>Editar</i> con grupo 2 (<code>SelectEditSG</code>).</li>
+  <li>En <i>Datos</i>, escribir el valor sobre la vista <b>FC=SE</b> del ajuste
+      (p. ej. <code>…/PTOC1.StrVal.setVal[SE]</code>). La vista <b>FC=SG</b> (solo lectura)
+      sigue mostrando el valor del grupo activo.</li>
+  <li><i>Confirmar edición</i> — el valor queda guardado en el grupo 2.</li>
+  <li><i>Activar</i> el grupo 2 cuando proceda: la protección conmuta de juego completo.</li>
+</ol>
+<div class="note">Un grupo fuera de rango (mayor que <code>NumOfSG</code>) lo rechaza el IED con
+<i>conflicto de estado del objeto</i>; el intento queda igualmente en la auditoría (§16).</div>
+
+<!-- ============ 12 ============ -->
+<h2>12 · Logs del IED (ReadJournal)</h2>
+<p>Además de los reportes (que se pierden si nadie escucha), los IEDs con <b>LogControl</b>
+persisten eventos en un <b>log interno</b>. La sección <i>Logs del IED</i> lista los LCB del
+modelo (FC <code>LG</code>), lee el journal por MMS <code>ReadJournal</code> y muestra cada
+entrada con su <b>fecha</b> (BinaryTime decodificado), su <b>EntryID</b> y los <b>valores</b>
+registrados. Exportable a CSV.</p>
+<table>
+  <tr><th>Fecha</th><th class="mono">EntryID</th><th class="mono">Valores</th></tr>
+  <tr><td class="mono">2026-07-28 09:14:02.150</td><td class="mono">0000000000000001</td><td class="mono">true</td></tr>
+  <tr><td class="mono">2026-07-28 09:14:03.900</td><td class="mono">0000000000000002</td><td class="mono">false</td></tr>
+</table>
+<div class="note">Si el servidor indica <code>moreFollows</code>, la vista lo avisa: hay más
+entradas de las devueltas en esa lectura.</div>
+
+<!-- ============ 13 ============ -->
+<h2>13 · Bus de estación: GOOSE y Sampled Values</h2>
+<p>La sección <b>Bus de estación</b> (sub-pestañas <b>GOOSE</b> y <b>SV</b>) trabaja en la
+<b>capa 2</b> (Ethernet): elija la interfaz de red y pulse <i>Iniciar</i>. Requiere permisos de
+captura (<code>setcap</code> o root; en Windows, Npcap). Publicar tramas de demo exige además
+el modo mando (§4.2).</p>
 <h3>GOOSE</h3>
 <table>
   <tr><th class="mono">GoCbRef</th><th class="mono">MAC dst</th><th>APPID</th><th>stNum</th><th>sqNum</th><th>TTL</th><th>Datos</th></tr>
@@ -481,6 +578,20 @@ CDC del componente — <code>Dbpos</code> (posición doble, DPC/DPS) o booleano 
 <p>Un salto de <b>stNum</b> indica un cambio de estado (evento); <b>sqNum</b> cuenta las
 retransmisiones. La app también puede <b>publicar</b> GOOSE de prueba, incluida la trama con
 <b>bit de simulación</b> (Ed.2) para probar esquemas con <code>LPHD.Sim</code> sin disparar en real.</p>
+<h3>Diff de datos entre tramas</h3>
+<p>El monitor compara los valores del dataset de cada trama con los de la <b>trama anterior del
+mismo publicador</b> y resalta qué miembro cambió y de qué valor a cuál — la columna
+<b>cambios</b> queda vacía en las retransmisiones idénticas, así los eventos reales saltan a la
+vista:</p>
+<table>
+  <tr><th>Hora</th><th>stNum</th><th>Tipo</th><th class="mono">Valores</th><th class="mono">Cambios</th></tr>
+  <tr><td class="mono">09:14:02.150</td><td>5</td><td>stChange</td><td class="mono">false, 0</td>
+      <td class="mono">[1] true → false, [2] 1 → 0</td></tr>
+  <tr><td class="mono">09:14:01.900</td><td>4</td><td>retx</td><td class="mono">true, 1</td><td></td></tr>
+</table>
+<p>Las estadísticas por publicador añaden el <b>último cambio de datos</b> con su hora, y el
+CSV exporta la columna. Si el dataset crece o encoge entre tramas (cambio de
+<code>confRev</code>), los miembros añadidos o retirados se señalan con <code>—</code>.</p>
 
 <h3>Sampled Values</h3>
 <p>El visor SV muestra las muestras de los 8 canales (4 corrientes + 4 tensiones en 9-2LE)
@@ -527,19 +638,32 @@ según llegan, con su gráfico de forma de onda:</p>
 <figcaption>Fig. 5 — Visor SV: corrientes trifásicas 9-2LE (4000 muestras/s, 50 Hz) desfasadas 120°.</figcaption>
 </figure>
 
+<h3>Fasores</h3>
+<p>Junto a la forma de onda, la vista <b>Fasores</b> estima magnitud y ángulo de la componente
+fundamental de cada canal (DFT de un bin sobre ciclos completos de la ventana de muestras):</p>
+<ul>
+  <li><b>Diagrama polar</b>: tensiones con trazo continuo, corrientes con trazo discontinuo;
+  cada grupo se normaliza por separado (las corrientes no desaparecen frente a las tensiones).</li>
+  <li><b>Tabla</b>: RMS en unidades físicas 9-2LE (corriente 1&nbsp;mA/cuenta, tensión
+  10&nbsp;mV/cuenta), RMS crudo y <b>ángulo relativo</b> a la primera tensión visible — un
+  sistema trifásico sano muestra ≈120° entre fases.</li>
+  <li><b>Muestras por ciclo</b> configurable: 80 para 9-2LE a 50&nbsp;Hz (4000 muestras/s),
+  96 para 60&nbsp;Hz (4800/s). Con el publicador de demo (~20&nbsp;muestras/s) use ≈63.</li>
+  <li>Los canales a cero o con solo componente continua se omiten (sin fundamental).</li>
+</ul>
 <div class="note">Las tramas firmadas con IEC&nbsp;62351-6 (HMAC o ECDSA) se verifican si se
 configura la clave; las tramas manipuladas aparecen como evento <code>AuthFailed</code>.</div>
 
-<!-- ============ 11 ============ -->
-<h2>11 · Comparar SCL ↔ IED real</h2>
-<p>La pestaña <b>Comparar</b> cruza el modelo del fichero SCL con el modelo descubierto en la
+<!-- ============ 14 ============ -->
+<h2>14 · Comparar SCL ↔ IED real</h2>
+<p>La sección <b>Comparar</b> cruza el modelo del fichero SCL con el modelo descubierto en la
 red y lista las discrepancias: objetos del SCL que el IED no anuncia y objetos del IED ausentes
 en el SCL. Útil para <b>verificar que el IED en servicio corresponde a la ingeniería</b>
 (versiones de configuración, datasets modificados en campo, etc.).</p>
 
-<!-- ============ 12 ============ -->
-<h2>12 · Transferencia de ficheros (COMTRADE)</h2>
-<p>La pestaña <b>Ficheros</b> lista el directorio del IED (recursivo) con nombre, tamaño y fecha,
+<!-- ============ 15 ============ -->
+<h2>15 · Transferencia de ficheros (COMTRADE)</h2>
+<p>La sección <b>Ficheros</b> lista el directorio del IED (recursivo) con nombre, tamaño y fecha,
 y descarga cualquier fichero — en particular los <b>registros de perturbación COMTRADE</b>
 (pares <code>.cfg</code>/<code>.dat</code> y <code>.hdr</code> opcional) que generan las
 protecciones tras una falta.</p>
@@ -550,10 +674,30 @@ protecciones tras una falta.</p>
   <tr><td class="mono">config/ied.cid</td><td class="mono">1.3 MiB</td><td class="mono">2026-07-17 21:49</td></tr>
 </table>
 
-<!-- ============ 13 ============ -->
-<h2 class="pagebreak">13 · Simular un IED en la red</h2>
+<!-- ============ 16 ============ -->
+<h2>16 · Auditoría de operaciones</h2>
+<p>Toda acción que <b>toca el IED o el bus</b> desde esta estación queda registrada en un
+fichero local <b>append-only</b> (<code>audit.jsonl</code> en el directorio de datos del
+usuario; la ruta exacta se muestra en la propia sección). La UI no permite borrarlo — es la
+traza de operaciones.</p>
+<table>
+  <tr><th>Acción</th><th>Qué registra</th></tr>
+  <tr><td class="mono">connect / connect-tls / disconnect</td><td>sesiones por conexión (ip:puerto)</td></tr>
+  <tr><td class="mono">write / operate / select</td><td>referencia, valor y tipo, resultado (ok, denegado o el error del IED)</td></tr>
+  <tr><td class="mono">rcb-write / rpt-enable / rpt-disable</td><td>RCB afectado y parámetros cambiados</td></tr>
+  <tr><td class="mono">sg-edit / sg-confirm / sg-active</td><td>operaciones sobre grupos de ajuste, con el grupo</td></tr>
+</table>
+<p>Cada entrada lleva <b>fecha con milisegundos, conexión, acción, referencia, detalle y
+resultado</b> — también los intentos <b>rechazados</b> por el IED (RBAC, interlocking, fuera de
+rango…). La vista permite <b>filtrar</b> por texto y <b>exportar a CSV</b> para adjuntar a un
+parte de trabajo.</p>
+<div class="note"><b>Ámbito.</b> Es una auditoría <i>de esta estación de trabajo</i> (qué se
+ordenó desde aquí). El registro histórico <i>del IED</i> es el log del §12.</div>
+
+<!-- ============ 17 ============ -->
+<h2 class="pagebreak">17 · Simular un IED en la red</h2>
 <div class="note"><b>Desde la UI.</b> Todo lo de esta sección puede hacerse <b>sin línea de
-comandos</b> desde el <i>Entorno de pruebas</i> (§4.3): elegir el SCL, escuchar en
+comandos</b> desde el <i>Entorno de pruebas</i> (§5.4): elegir el SCL, escuchar en
 <code>0.0.0.0</code> y arrancar varios IEDs en vivo a la vez. La CLI sigue siendo útil para
 scripts, arranque automático y puertos privilegiados.</div>
 <p>La herramienta CLI <code>iec61850-sim</code> convierte
@@ -579,8 +723,8 @@ iec61850-sim --scl ied_trafo.cid  --bind 10.11.1.22:102 &</code></pre>
 un IED conforme: asociación, browse, lecturas, escrituras, datasets, reportes URCB/BRCB,
 settings groups, control y ficheros.</p>
 
-<!-- ============ 14 ============ -->
-<h2>14 · Seguridad: TLS / mTLS (IEC 62351-3)</h2>
+<!-- ============ 18 ============ -->
+<h2>18 · Seguridad: TLS / mTLS (IEC 62351-3)</h2>
 <p>El diálogo TLS (candado) configura la asociación segura:</p>
 <table>
   <tr><th>Campo</th><th>Descripción</th></tr>
@@ -589,11 +733,11 @@ settings groups, control y ficheros.</p>
   <tr><td>Cert / Key cliente</td><td>identidad de esta app (mTLS); el IED puede mapear el CN a un rol RBAC</td></tr>
 </table>
 <p>Con <i>Usar TLS</i> activo, <i>Conectar TLS</i> establece MMS sobre TLS (puerto típico 3782).
-El botón <i>Iniciar sim TLS (demo)</i> levanta un IED embebido con certificados de prueba para
+El botón <i>Probar TLS con el simulador</i> levanta un IED embebido con certificados de prueba para
 ensayar el flujo completo, incluida la revocación (CRL/OCSP) del lado servidor.</p>
 
-<!-- ============ 15 ============ -->
-<h2>15 · Solución de problemas</h2>
+<!-- ============ 19 ============ -->
+<h2>19 · Solución de problemas</h2>
 <table>
   <tr><th>Síntoma</th><th>Causa probable</th><th>Remedio</th></tr>
   <tr><td>«conexión rechazada»</td><td>puerto/IP mal, IED caído, firewall</td>
@@ -610,10 +754,18 @@ ensayar el flujo completo, incluida la revocación (CRL/OCSP) del lado servidor.
       <td><code>setcap cap_net_raw,cap_net_admin=+ep</code>; elija la interfaz del bus</td></tr>
   <tr><td>Reportes no llegan</td><td>TrgOps sin <code>dchg</code>, dataset vacío, RptEna=false</td>
       <td>revise el formulario del RCB y habilite de nuevo; pruebe GI</td></tr>
+  <tr><td>Botones Escribir/Operar/Activar grises</td><td>modo mando desarmado (la app arranca en solo lectura)</td>
+      <td>arme el escudo de la cabecera (§4.2); se desarma al cambiar de IED</td></tr>
+  <tr><td>«Ningún LD declara un SGCB» / sin LCBs</td><td>el modelo no tiene <code>SettingControl</code>/<code>LogControl</code></td>
+      <td>normal en muchos IEDs; verifique el SCL de ingeniería</td></tr>
+  <tr><td>Fasores con ángulos que giran</td><td>«muestras por ciclo» no coincide con la tasa real</td>
+      <td>ajuste el valor (80 → 50 Hz, 96 → 60 Hz; demo ≈63)</td></tr>
+  <tr><td>Conmutar grupo → <i>conflicto de estado</i></td><td>grupo fuera de rango (&gt; NumOfSG)</td>
+      <td>use un grupo entre 1 y el total mostrado en la tarjeta</td></tr>
 </table>
 
 <div style="margin-top:40px;color:var(--muted);font-size:9pt;border-top:1px solid var(--line);padding-top:8px;">
-Manual generado para IEC 61850 Studio 0.1.1 · librería iec61850-rs · julio 2026.
+Manual generado para IEC 61850 Studio 0.1.2 · librería iec61850-rs · julio 2026.
 Los identificadores de ejemplo (TEMPLATEMON, CVMMXN1, rcb_E, MeasFltA…) pertenecen al CID
 de demostración «LT-SJA (ES-VAL)».
 </div>
