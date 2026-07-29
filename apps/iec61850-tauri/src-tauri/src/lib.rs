@@ -1076,6 +1076,122 @@ async fn rcb_write(
     res
 }
 
+// --- Grupos de ajustes (SGCB, IEC 61850-7-2) ---
+
+/// SGCB de un LD serializado para el frontend.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SgcbInfo {
+    /// Referencia del bloque (`LD/LLN0.SGCB[SP]`).
+    reference: String,
+    num_of_sg: u32,
+    act_sg: u32,
+    edit_sg: u32,
+}
+
+/// Entero sin signo de un componente del SGCB (tolerante a Int/Uint).
+fn sg_u32(d: &MmsData) -> u32 {
+    match d {
+        MmsData::Uint(u) => *u as u32,
+        MmsData::Int(i) => (*i).max(0) as u32,
+        _ => 0,
+    }
+}
+
+/// Lee el SGCB de un LD si existe (`<LD>/LLN0.SGCB`): estructura en orden 8-1
+/// NumOfSG, ActSG, EditSG, CnfEdit, LActTm. `None` si el LD no tiene SGCB.
+#[tauri::command]
+async fn sgcb_read(state: State<'_, AppState>, domain: String) -> Result<Option<SgcbInfo>, String> {
+    let c = current(&state).await?;
+    let reference = format!("{domain}/LLN0.SGCB[SP]");
+    let Ok(obj) = reference.parse::<ObjectReference>() else {
+        return Ok(None);
+    };
+    match c.read(&obj).await {
+        Ok(MmsData::Structure(comps)) if comps.len() >= 3 => Ok(Some(SgcbInfo {
+            reference,
+            num_of_sg: sg_u32(&comps[0]),
+            act_sg: sg_u32(&comps[1]),
+            edit_sg: sg_u32(&comps[2]),
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// `SelectActiveSG`: conmuta el grupo de ajustes activo del SGCB.
+#[tauri::command]
+async fn sg_select_active(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sgcb: String,
+    group: u32,
+) -> Result<(), String> {
+    let c = current(&state).await?;
+    let conn = active_id(&state).await;
+    let obj = parse_ref(&sgcb)?;
+    let res = c
+        .select_active_sg(&obj, group)
+        .await
+        .map_err(|e| e.to_string());
+    audit(
+        &app,
+        &conn,
+        "sg-active",
+        &sgcb,
+        &format!("SelectActiveSG {group}"),
+        &outcome(&res),
+    );
+    res
+}
+
+/// `SelectEditSG`: selecciona el grupo en edición (las escrituras FC=SE van a él).
+#[tauri::command]
+async fn sg_select_edit(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sgcb: String,
+    group: u32,
+) -> Result<(), String> {
+    let c = current(&state).await?;
+    let conn = active_id(&state).await;
+    let obj = parse_ref(&sgcb)?;
+    let res = c
+        .select_edit_sg(&obj, group)
+        .await
+        .map_err(|e| e.to_string());
+    audit(
+        &app,
+        &conn,
+        "sg-edit",
+        &sgcb,
+        &format!("SelectEditSG {group}"),
+        &outcome(&res),
+    );
+    res
+}
+
+/// `ConfirmEditSGValues`: persiste los valores FC=SE pendientes al grupo en edición.
+#[tauri::command]
+async fn sg_confirm_edit(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sgcb: String,
+) -> Result<(), String> {
+    let c = current(&state).await?;
+    let conn = active_id(&state).await;
+    let obj = parse_ref(&sgcb)?;
+    let res = c.confirm_edit_sg(&obj).await.map_err(|e| e.to_string());
+    audit(
+        &app,
+        &conn,
+        "sg-confirm",
+        &sgcb,
+        "ConfirmEditSGValues",
+        &outcome(&res),
+    );
+    res
+}
+
 #[tauri::command]
 async fn enable_report(
     app: AppHandle,
@@ -1976,6 +2092,10 @@ pub fn run() {
             rcb_write,
             enable_report,
             disable_report,
+            sgcb_read,
+            sg_select_active,
+            sg_select_edit,
+            sg_confirm_edit,
             write,
             operate,
             select,

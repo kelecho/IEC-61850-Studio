@@ -34,6 +34,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import {
+  IconAdjustments,
   IconBookmark,
   IconBroadcast,
   IconChevronDown,
@@ -227,6 +228,8 @@ type Profile = {
   cert: string;
   key: string;
 };
+/** SGCB (grupos de ajuste) de un LD, leído del IED. */
+type SgcbInfo = { reference: string; numOfSg: number; actSg: number; editSg: number };
 /** Entrada del registro de auditoría local (audit.jsonl). */
 type AuditRow = {
   tsMs: number;
@@ -288,6 +291,7 @@ const SECTION_META: Record<string, { title: string; desc: string; norm: string; 
   reportes: { title: "Reportes", desc: "Habilita RCBs y observa los InformationReport en vivo", norm: "IEC 61850-8-1 · RCB", icon: <IconBroadcast size={22} /> },
   control: { title: "Control", desc: "Operar y escribir (con confirmación) sobre el IED", norm: "IEC 61850-7-2 · Control", icon: <IconHandClick size={22} /> },
   watch: { title: "Vigilar", desc: "Lista curada de atributos con sondeo periódico", norm: "IEC 61850-8-1 · Sondeo", icon: <IconEye size={22} /> },
+  ajustes: { title: "Grupos de ajuste", desc: "Conmutar el grupo activo y editar valores por grupo (SGCB)", norm: "IEC 61850-7-2 · SGCB", icon: <IconAdjustments size={22} /> },
   bus: { title: "Bus de estación", desc: "Monitor y publicación GOOSE / Sampled Values en la capa 2", norm: "IEC 61850-8-1 / 9-2LE", icon: <IconRss size={22} /> },
   comparar: { title: "Comparar SCL ↔ online", desc: "Diferencias entre el archivo de ingeniería y el dispositivo", norm: "IEC 61850-6 · SCL", icon: <IconGitCompare size={22} /> },
   ficheros: { title: "Ficheros del IED", desc: "Registros de perturbación, COMTRADE y logs (file transfer MMS)", norm: "IEC 61850-8-1 · Ficheros", icon: <IconFolder size={22} /> },
@@ -438,6 +442,11 @@ export default function App() {
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
   const [auditFile, setAuditFile] = useState("");
+  // Grupos de ajuste (SGCB) por LD del IED activo.
+  const [sgcbs, setSgcbs] = useState<SgcbInfo[]>([]);
+  const [sgLoading, setSgLoading] = useState(false);
+  // Grupo elegido en la UI por cada SGCB (clave: referencia del bloque).
+  const [sgSel, setSgSel] = useState<Map<string, number>>(new Map());
 
   const [domains, setDomains] = useState<DomainItems[]>([]);
   const [query, setQuery] = useState("");
@@ -637,6 +646,12 @@ export default function App() {
     if (activeTab === "auditoria") refreshAudit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Grupos de ajuste: buscar SGCBs al entrar en la sección (si hay conexión).
+  useEffect(() => {
+    if (activeTab === "ajustes" && connected) scanSgcbs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, connected, domains]);
 
   // Entradas de auditoría visibles según el filtro de texto.
   const auditShown = useMemo(() => {
@@ -1095,6 +1110,84 @@ export default function App() {
       fail(e);
     }
   }
+  // --- Grupos de ajuste (SGCB) ---
+  // Busca el SGCB de cada LD descubierto (convención 8-1: <LD>/LLN0.SGCB).
+  async function scanSgcbs() {
+    setSgLoading(true);
+    try {
+      const found: SgcbInfo[] = [];
+      for (const d of domains) {
+        const info = await invoke<SgcbInfo | null>("sgcb_read", { domain: d.domain });
+        if (info) found.push(info);
+      }
+      setSgcbs(found);
+      setSgSel((prev) => {
+        const next = new Map(prev);
+        for (const s of found) if (!next.has(s.reference)) next.set(s.reference, s.actSg);
+        return next;
+      });
+    } catch (e) {
+      fail(e);
+    }
+    setSgLoading(false);
+  }
+  // Re-lee un solo SGCB tras una operación.
+  async function refreshSgcb(reference: string) {
+    const domain = reference.split("/")[0];
+    try {
+      const info = await invoke<SgcbInfo | null>("sgcb_read", { domain });
+      setSgcbs((prev) =>
+        info ? prev.map((s) => (s.reference === reference ? info : s)) : prev.filter((s) => s.reference !== reference),
+      );
+    } catch {
+      /* la tarjeta se queda como estaba */
+    }
+  }
+  // SelectActiveSG: conmuta qué grupo gobierna el IED — maniobra con barrera.
+  function askActivateSg(s: SgcbInfo) {
+    if (!commandMode) return;
+    const group = sgSel.get(s.reference) ?? s.actSg;
+    setConfirmText("");
+    setPending({
+      title: "Conmutar grupo de ajustes",
+      device: deviceLabel(s.reference),
+      danger: dangerZone,
+      body: `Activar el grupo de ajustes ${group} (de ${s.numOfSg}) en\n  ${s.reference}\nLa protección pasará a usar los valores de ese grupo.`,
+      run: async () => {
+        await invoke("sg_select_active", { sgcb: s.reference, group });
+        ok(`grupo ${group} activo`);
+        refreshSgcb(s.reference);
+      },
+    });
+  }
+  // SelectEditSG: elige el buffer de edición (sin efecto en valores vivos).
+  async function selectEditSg(s: SgcbInfo) {
+    const group = sgSel.get(s.reference) ?? s.actSg;
+    try {
+      await invoke("sg_select_edit", { sgcb: s.reference, group });
+      ok(`grupo ${group} en edición — escribe los valores FC=SE y confirma`);
+      refreshSgcb(s.reference);
+    } catch (e) {
+      fail(e);
+    }
+  }
+  // ConfirmEditSGValues: persiste los valores FC=SE pendientes — con barrera.
+  function askConfirmSg(s: SgcbInfo) {
+    if (!commandMode) return;
+    setConfirmText("");
+    setPending({
+      title: "Confirmar valores editados",
+      device: deviceLabel(s.reference),
+      danger: dangerZone,
+      body: `Confirmar (ConfirmEditSGValues) los valores pendientes del grupo en edición (${s.editSg}) en\n  ${s.reference}\nQuedarán guardados en ese grupo.`,
+      run: async () => {
+        await invoke("sg_confirm_edit", { sgcb: s.reference });
+        ok("valores confirmados");
+        refreshSgcb(s.reference);
+      },
+    });
+  }
+
   // --- Auditoría ---
   async function refreshAudit() {
     try {
@@ -1893,6 +1986,7 @@ export default function App() {
               { v: "datos", label: "Datos", icon: <IconDatabase size={20} />, n: 0 },
               { v: "control", label: "Control", icon: <IconHandClick size={20} />, n: 0 },
               { v: "watch", label: "Vigilar", icon: <IconEye size={20} />, n: watch.length },
+              { v: "ajustes", label: "Grupos de ajuste (SGCB)", icon: <IconAdjustments size={20} />, n: sgcbs.length },
               { zone: true },
               // Tiempo real: flujos que llegan solos.
               { v: "reportes", label: "Reportes (RCB)", icon: <IconBroadcast size={20} />, n: reports.length },
@@ -2989,6 +3083,103 @@ export default function App() {
                     </Table.Tbody>
                   </Table>
                 </ScrollArea>
+              )}
+            </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="ajustes" pt="sm">
+            <Stack gap="sm">
+              <Group align="center" gap="xs">
+                <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} loading={sgLoading} disabled={!connected} onClick={scanSgcbs}>
+                  Buscar SGCB
+                </Button>
+                <Text size="xs" c="dimmed">
+                  Flujo de edición: seleccionar grupo en edición → escribir los valores FC=SE en «Datos» → confirmar → activar el grupo.
+                </Text>
+              </Group>
+              {!connected ? (
+                <Text size="sm" c="dimmed">
+                  Conecta a un IED para ver sus grupos de ajuste.
+                </Text>
+              ) : sgcbs.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  {sgLoading ? "Buscando…" : "Ningún LD de este IED declara un SGCB."}
+                </Text>
+              ) : (
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
+                  {sgcbs.map((s) => {
+                    const group = sgSel.get(s.reference) ?? s.actSg;
+                    return (
+                      <Card key={s.reference} withBorder padding="md" radius="md">
+                        <Group justify="space-between" wrap="nowrap" mb="xs">
+                          <Text fw={600} size="sm" ff="monospace" truncate>
+                            {s.reference.split("/")[0]}
+                          </Text>
+                          <Group gap={6} wrap="nowrap">
+                            <Badge variant="filled" color="brand" title="grupo activo">
+                              activo {s.actSg}
+                            </Badge>
+                            <Badge variant="light" color="gray" title="grupo en edición">
+                              edición {s.editSg || "—"}
+                            </Badge>
+                            <Badge variant="outline" color="gray">
+                              {s.numOfSg} grupos
+                            </Badge>
+                          </Group>
+                        </Group>
+                        <Text size="xs" c="dimmed" ff="monospace" mb="sm">
+                          {s.reference}
+                        </Text>
+                        <Group gap="xs" align="end" wrap="nowrap">
+                          <NumberInput
+                            size="xs"
+                            label="Grupo"
+                            w={80}
+                            min={1}
+                            max={s.numOfSg}
+                            value={group}
+                            onChange={(v) =>
+                              setSgSel((prev) => new Map(prev).set(s.reference, Math.min(Math.max(Number(v) || 1, 1), s.numOfSg)))
+                            }
+                          />
+                          <Button
+                            size="xs"
+                            color="orange"
+                            disabled={!commandMode}
+                            title={commandMode ? "SelectActiveSG" : "arma el modo mando para conmutar"}
+                            onClick={() => askActivateSg(s)}
+                          >
+                            Activar
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="default"
+                            disabled={!commandMode}
+                            title={commandMode ? "SelectEditSG" : "arma el modo mando para editar"}
+                            onClick={() => selectEditSg(s)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="orange"
+                            disabled={!commandMode || !s.editSg}
+                            title={
+                              !commandMode
+                                ? "arma el modo mando para confirmar"
+                                : s.editSg
+                                  ? "ConfirmEditSGValues"
+                                  : "no hay grupo en edición"
+                            }
+                            onClick={() => askConfirmSg(s)}
+                          >
+                            Confirmar edición
+                          </Button>
+                        </Group>
+                      </Card>
+                    );
+                  })}
+                </SimpleGrid>
               )}
             </Stack>
           </Tabs.Panel>
