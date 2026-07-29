@@ -20,6 +20,11 @@ jobs:
   fuzz:
     name: fuzz ${{ matrix.target }}
     runs-on: ubuntu-latest
+    env:
+      # El rust-toolchain.toml del repo fija "stable" y pisa al nightly del
+      # action; cargo-fuzz necesita nightly (-Z, sanitizers). Esta variable
+      # gana a cualquier override de directorio.
+      RUSTUP_TOOLCHAIN: nightly
     strategy:
       fail-fast: false
       matrix:
