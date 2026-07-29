@@ -270,9 +270,34 @@ type Pending = {
 type Sort<K extends string> = { key: K; dir: 1 | -1 };
 
 // Acumuladores de estadísticas por stream (en un ref, no provocan render).
-type GAcc = { count: number; last: number; gaps: number[]; stChg: number; retx: number; lost: number; stNum: number; sqNum: number };
+type GAcc = {
+  count: number;
+  last: number;
+  gaps: number[];
+  stChg: number;
+  retx: number;
+  lost: number;
+  stNum: number;
+  sqNum: number;
+  /** Últimos valores vistos del dataset (para el diff entre tramas). */
+  values: string[];
+  /** Último cambio de datos detectado (miembros que cambiaron) y su hora. */
+  lastDiff: string;
+  lastDiffT: string;
+};
 type SAcc = { count: number; last: number; gaps: number[]; lost: number; smpCnt: number };
-type GStat = { key: string; rate: number; jitter: number; stChg: number; retx: number; lost: number; stNum: number; sqNum: number };
+type GStat = {
+  key: string;
+  rate: number;
+  jitter: number;
+  stChg: number;
+  retx: number;
+  lost: number;
+  stNum: number;
+  sqNum: number;
+  lastDiff: string;
+  lastDiffT: string;
+};
 type SStat = { key: string; rate: number; jitter: number; count: number; lost: number; smpCnt: number };
 
 function StatCard({ title, value }: { title: string; value: ReactNode }) {
@@ -356,6 +381,9 @@ type GooseRow = {
   kind: string;
   lost: number;
   values: string[];
+  /** Miembros del dataset que cambiaron respecto a la trama anterior del
+   *  mismo publicador (calculado en el frontend; vacío si no hubo cambio). */
+  diff: string[];
 };
 type SvRow = {
   n: number;
@@ -704,17 +732,44 @@ export default function App() {
 
   // Monitores de capa 2: listeners + lista de interfaces.
   useEffect(() => {
-    const ug = listen<Omit<GooseRow, "t" | "n">>("goose", (e) => {
-      const row = { ...e.payload, n: monSeq.current++, t: new Date().toLocaleTimeString() };
-      setGooseRows((p) => [row, ...p].slice(0, 300));
+    const ug = listen<Omit<GooseRow, "t" | "n" | "diff">>("goose", (e) => {
       const key = e.payload.gocb_ref || e.payload.go_id;
       const now = performance.now();
+      const t = new Date().toLocaleTimeString();
       const g = statsRef.current.goose;
       let a = g.get(key);
       if (!a) {
-        a = { count: 0, last: now, gaps: [], stChg: 0, retx: 0, lost: 0, stNum: 0, sqNum: 0 };
+        a = {
+          count: 0,
+          last: now,
+          gaps: [],
+          stChg: 0,
+          retx: 0,
+          lost: 0,
+          stNum: 0,
+          sqNum: 0,
+          values: [],
+          lastDiff: "",
+          lastDiffT: "",
+        };
         g.set(key, a);
       }
+      // Diff de datos respecto a la trama anterior del mismo publicador:
+      // qué miembro del dataset cambió y de qué valor a cuál.
+      const diff: string[] = [];
+      if (a.count > 0) {
+        const vals = e.payload.values;
+        for (let i = 0; i < Math.max(a.values.length, vals.length); i++) {
+          if (a.values[i] !== vals[i]) diff.push(`[${i + 1}] ${a.values[i] ?? "—"} → ${vals[i] ?? "—"}`);
+        }
+      }
+      a.values = e.payload.values;
+      if (diff.length > 0) {
+        a.lastDiff = diff.join(", ");
+        a.lastDiffT = t;
+      }
+      const row: GooseRow = { ...e.payload, diff, n: monSeq.current++, t };
+      setGooseRows((p) => [row, ...p].slice(0, 300));
       if (a.count > 0) {
         a.gaps.push(now - a.last);
         if (a.gaps.length > 64) a.gaps.shift();
@@ -782,6 +837,8 @@ export default function App() {
           lost: a.lost,
           stNum: a.stNum,
           sqNum: a.sqNum,
+          lastDiff: a.lastDiff,
+          lastDiffT: a.lastDiffT,
         })),
       );
       setSStats(
@@ -2726,7 +2783,7 @@ export default function App() {
                   onClick={() =>
                     exportCsv(
                       "goose.csv",
-                      ["hora", "goID", "gocbRef", "appid", "mac", "stNum", "sqNum", "conf", "test", "tipo", "perdidas", "valores"],
+                      ["hora", "goID", "gocbRef", "appid", "mac", "stNum", "sqNum", "conf", "test", "tipo", "perdidas", "valores", "cambios"],
                       gooseRows.map((r) => [
                         r.t,
                         r.go_id,
@@ -2740,6 +2797,7 @@ export default function App() {
                         r.kind,
                         String(r.lost),
                         r.values.join(" | "),
+                        r.diff.join(" | "),
                       ]),
                     )
                   }
@@ -2796,6 +2854,7 @@ export default function App() {
                         <Table.Th w={70}>pérdidas</Table.Th>
                         <Table.Th w={70}>stNum</Table.Th>
                         <Table.Th w={70}>sqNum</Table.Th>
+                        <Table.Th>último cambio de datos</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -2813,6 +2872,17 @@ export default function App() {
                           </Table.Td>
                           <Table.Td>{s.stNum}</Table.Td>
                           <Table.Td>{s.sqNum}</Table.Td>
+                          <Table.Td>
+                            {s.lastDiff ? (
+                              <Text size="xs" c="orange" title={s.lastDiff}>
+                                {s.lastDiffT} · {s.lastDiff}
+                              </Text>
+                            ) : (
+                              <Text size="xs" c="dimmed">
+                                —
+                              </Text>
+                            )}
+                          </Table.Td>
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
@@ -2834,6 +2904,7 @@ export default function App() {
                       <Table.Th w={50}>sim</Table.Th>
                       <Table.Th w={100}>tipo</Table.Th>
                       <Table.Th>valores</Table.Th>
+                      <Table.Th>cambios</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -2850,6 +2921,13 @@ export default function App() {
                         <Table.Td>{r.simulation ? <Badge size="xs" color="grape">SIM</Badge> : ""}</Table.Td>
                         <Table.Td>{r.kind}</Table.Td>
                         <Table.Td>{r.values.join(", ")}</Table.Td>
+                        <Table.Td>
+                          {r.diff.length > 0 && (
+                            <Text size="xs" c="orange" fw={600}>
+                              {r.diff.join(", ")}
+                            </Text>
+                          )}
+                        </Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
