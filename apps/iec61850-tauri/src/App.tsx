@@ -56,6 +56,7 @@ import {
   IconShieldCheck,
   IconShieldLock,
   IconNetwork,
+  IconNotebook,
   IconRss,
   IconPlayerPlay,
   IconPlayerStop,
@@ -230,6 +231,9 @@ type Profile = {
 };
 /** SGCB (grupos de ajuste) de un LD, leído del IED. */
 type SgcbInfo = { reference: string; numOfSg: number; actSg: number; editSg: number };
+/** Entrada de un log del IED (ReadJournal). */
+type JournalEntryP = { entryId: string; timeEpoch: number | null; values: string[] };
+type JournalReadP = { entries: JournalEntryP[]; moreFollows: boolean };
 /** Entrada del registro de auditoría local (audit.jsonl). */
 type AuditRow = {
   tsMs: number;
@@ -289,6 +293,7 @@ const SECTION_META: Record<string, { title: string; desc: string; norm: string; 
   resumen: { title: "Resumen", desc: "Vista general del IED y su modelo de datos", norm: "IEC 61850-7-1 · Modelo", icon: <IconLayoutDashboard size={22} /> },
   datos: { title: "Datos", desc: "Navega el modelo y lee atributos con calidad y marca de tiempo", norm: "IEC 61850-8-1 · MMS", icon: <IconDatabase size={22} /> },
   reportes: { title: "Reportes", desc: "Habilita RCBs y observa los InformationReport en vivo", norm: "IEC 61850-8-1 · RCB", icon: <IconBroadcast size={22} /> },
+  logs: { title: "Logs del IED", desc: "Registro histórico del dispositivo (LCB + ReadJournal)", norm: "IEC 61850-8-1 · Log", icon: <IconNotebook size={22} /> },
   control: { title: "Control", desc: "Operar y escribir (con confirmación) sobre el IED", norm: "IEC 61850-7-2 · Control", icon: <IconHandClick size={22} /> },
   watch: { title: "Vigilar", desc: "Lista curada de atributos con sondeo periódico", norm: "IEC 61850-8-1 · Sondeo", icon: <IconEye size={22} /> },
   ajustes: { title: "Grupos de ajuste", desc: "Conmutar el grupo activo y editar valores por grupo (SGCB)", norm: "IEC 61850-7-2 · SGCB", icon: <IconAdjustments size={22} /> },
@@ -442,6 +447,11 @@ export default function App() {
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
   const [auditFile, setAuditFile] = useState("");
+  // Logs del IED (ReadJournal): LCB elegido y entradas leídas.
+  const [logSel, setLogSel] = useState<string | null>(null);
+  const [logEntries, setLogEntries] = useState<JournalEntryP[]>([]);
+  const [logMore, setLogMore] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
   // Grupos de ajuste (SGCB) por LD del IED activo.
   const [sgcbs, setSgcbs] = useState<SgcbInfo[]>([]);
   const [sgLoading, setSgLoading] = useState(false);
@@ -565,6 +575,16 @@ export default function App() {
     () => collectLeafRefs(tree).filter((r) => /\[(RP|BR)\]$/.test(r)).sort(),
     [tree],
   );
+  // LCBs deducidos del modelo online: variables [LG] a nivel de bloque
+  // (LD/LN.Nombre — un solo punto; sus componentes llevan dos y se excluyen).
+  const lcbList = useMemo(
+    () =>
+      domains
+        .flatMap((d) => d.items)
+        .filter((r) => /^[^/]+\/[^.]+\.[^.[\]]+\[LG\]$/.test(r))
+        .sort(),
+    [domains],
+  );
   // Diff modelo configurado (SCL) ↔ modelo online (descubierto).
   const diff = useMemo(() => {
     const onlineSet = new Set(domains.flatMap((d) => d.items));
@@ -652,6 +672,12 @@ export default function App() {
     if (activeTab === "ajustes" && connected) scanSgcbs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, connected, domains]);
+
+  // Logs: preseleccionar el primer LCB del modelo al entrar en la sección.
+  useEffect(() => {
+    if (activeTab === "logs" && !logSel && lcbList.length > 0) setLogSel(lcbList[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, lcbList]);
 
   // Entradas de auditoría visibles según el filtro de texto.
   const auditShown = useMemo(() => {
@@ -1110,6 +1136,27 @@ export default function App() {
       fail(e);
     }
   }
+  // --- Logs (ReadJournal) ---
+  // Lee las entradas del log del LCB elegido. El nombre MMS del journal es
+  // "<LN>$<LogName>" (primer punto de la ruta → '$').
+  async function readJournal(ref?: string) {
+    const target = ref ?? logSel;
+    if (!target) return;
+    setLogLoading(true);
+    try {
+      const noFc = target.replace(/\[LG\]$/, "");
+      const [domain, rest] = noFc.split("/");
+      const item = rest.replace(".", "$");
+      const r = await invoke<JournalReadP>("journal_read", { domain, item });
+      setLogEntries(r.entries);
+      setLogMore(r.moreFollows);
+      ok(`${r.entries.length} entrada(s) del log`);
+    } catch (e) {
+      fail(e);
+    }
+    setLogLoading(false);
+  }
+
   // --- Grupos de ajuste (SGCB) ---
   // Busca el SGCB de cada LD descubierto (convención 8-1: <LD>/LLN0.SGCB).
   async function scanSgcbs() {
@@ -1990,6 +2037,7 @@ export default function App() {
               { zone: true },
               // Tiempo real: flujos que llegan solos.
               { v: "reportes", label: "Reportes (RCB)", icon: <IconBroadcast size={20} />, n: reports.length },
+              { v: "logs", label: "Logs del IED (ReadJournal)", icon: <IconNotebook size={20} />, n: logEntries.length },
               { v: "bus", label: "Bus de estación (GOOSE / SV)", icon: <IconRss size={20} />, n: gooseRows.length + svRows.length },
               { zone: true },
               // Ingeniería / mantenimiento: puesta en marcha y verificación.
@@ -3078,6 +3126,81 @@ export default function App() {
                               Descargar
                             </Button>
                           </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="logs" pt="sm">
+            <Stack gap="sm">
+              <Group align="end" gap="xs">
+                <Select
+                  size="xs"
+                  label="Log (LCB)"
+                  w={320}
+                  data={lcbList}
+                  value={logSel}
+                  onChange={setLogSel}
+                  placeholder={lcbList.length ? "elige un LCB" : "el modelo no declara LCBs"}
+                  searchable
+                />
+                <Button size="xs" disabled={!connected || !logSel} loading={logLoading} onClick={() => readJournal()}>
+                  Leer journal
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconDownload size={14} />}
+                  onClick={() =>
+                    exportCsv(
+                      "journal.csv",
+                      ["fecha", "entryID", "valores"],
+                      logEntries.map((e) => [
+                        e.timeEpoch != null ? new Date(e.timeEpoch * 1000).toISOString() : "",
+                        e.entryId,
+                        e.values.join(" | "),
+                      ]),
+                    )
+                  }
+                >
+                  Exportar CSV
+                </Button>
+                <Text size="xs" c="dimmed">
+                  Registro histórico persistido en el IED (servicio MMS ReadJournal).
+                </Text>
+              </Group>
+              {logMore && (
+                <Text size="xs" c="orange">
+                  El servidor indicó moreFollows: hay más entradas de las mostradas.
+                </Text>
+              )}
+              {logEntries.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  {!connected
+                    ? "Conecta a un IED."
+                    : lcbList.length === 0
+                      ? "El modelo de este IED no declara ningún LogControl."
+                      : "Pulsa «Leer journal» para ver las entradas del log."}
+                </Text>
+              ) : (
+                <ScrollArea h={440}>
+                  <Table striped withTableBorder stickyHeader fz="xs" ff="monospace">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th w={200}>Fecha</Table.Th>
+                        <Table.Th w={160}>EntryID</Table.Th>
+                        <Table.Th>Valores</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {logEntries.map((e, i) => (
+                        <Table.Tr key={`${e.entryId}-${i}`}>
+                          <Table.Td>{e.timeEpoch != null ? fmtTime(e.timeEpoch) : "—"}</Table.Td>
+                          <Table.Td>{e.entryId}</Table.Td>
+                          <Table.Td>{e.values.join("  ·  ")}</Table.Td>
                         </Table.Tr>
                       ))}
                     </Table.Tbody>

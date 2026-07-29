@@ -1076,6 +1076,65 @@ async fn rcb_write(
     res
 }
 
+// --- Logs (ReadJournal, IEC 61850-8-1) ---
+
+/// Entrada de journal serializada para el frontend.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JournalEntryP {
+    /// EntryID en hex (octetos monótonos).
+    entry_id: String,
+    /// Instante de ocurrencia en segundos epoch (BinaryTime decodificado).
+    time_epoch: Option<f64>,
+    /// Valores registrados, formateados.
+    values: Vec<String>,
+}
+
+/// Resultado de un ReadJournal.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JournalReadP {
+    entries: Vec<JournalEntryP>,
+    more_follows: bool,
+}
+
+/// `BinaryTime` MMS de 6 octetos → segundos epoch: ms desde medianoche (4 B)
+/// + días desde 1984-01-01 (2 B, epoch 441763200).
+fn binary_time_epoch(b: &[u8]) -> Option<f64> {
+    if b.len() < 6 {
+        return None;
+    }
+    let ms = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as f64;
+    let days = u16::from_be_bytes([b[4], b[5]]) as f64;
+    Some(441_763_200.0 + days * 86_400.0 + ms / 1000.0)
+}
+
+/// Lee las entradas de un log (`ReadJournal`). `domain` es el LD e `item` el
+/// nombre MMS del journal (`"<LN>$<LogName>"`, p. ej. `"LLN0$EventLog"`).
+#[tauri::command]
+async fn journal_read(
+    state: State<'_, AppState>,
+    domain: String,
+    item: String,
+) -> Result<JournalReadP, String> {
+    let c = current(&state).await?;
+    let (entries, more_follows) = c
+        .read_journal(&domain, &item)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(JournalReadP {
+        entries: entries
+            .iter()
+            .map(|e| JournalEntryP {
+                entry_id: hex(&e.entry_id),
+                time_epoch: binary_time_epoch(&e.occurrence_time),
+                values: e.values.iter().map(fmt_value).collect(),
+            })
+            .collect(),
+        more_follows,
+    })
+}
+
 // --- Grupos de ajustes (SGCB, IEC 61850-7-2) ---
 
 /// SGCB de un LD serializado para el frontend.
@@ -2092,6 +2151,7 @@ pub fn run() {
             rcb_write,
             enable_report,
             disable_report,
+            journal_read,
             sgcb_read,
             sg_select_active,
             sg_select_edit,
