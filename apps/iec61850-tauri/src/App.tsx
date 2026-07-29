@@ -218,6 +218,156 @@ function Waveform({ series, show }: { series: number[][]; show: boolean[] }) {
   );
 }
 
+/// Fasor de un canal por DFT de un solo bin a la fundamental, sobre un número
+/// entero de ciclos de las muestras más recientes. `spc` = muestras por ciclo.
+/// Devuelve RMS (en las unidades crudas de las muestras) y ángulo en grados.
+function phasorOf(samples: number[], spc: number): { rms: number; deg: number } | null {
+  const cycles = Math.floor(samples.length / spc);
+  if (spc < 4 || cycles < 1) return null;
+  const N = cycles * spc;
+  const n0 = samples.length - N;
+  let re = 0;
+  let im = 0;
+  for (let k = 0; k < N; k++) {
+    const a = (2 * Math.PI * k) / spc;
+    re += samples[n0 + k] * Math.cos(a);
+    im -= samples[n0 + k] * Math.sin(a);
+  }
+  const peak = (2 * Math.hypot(re, im)) / N;
+  if (peak < 1e-6) return null; // sin componente fundamental (canal a cero o solo DC)
+  return { rms: peak / Math.SQRT2, deg: (Math.atan2(im, re) * 180) / Math.PI };
+}
+
+/// Ángulo normalizado a (-180, 180].
+function normDeg(d: number): number {
+  let x = d % 360;
+  if (x <= -180) x += 360;
+  if (x > 180) x -= 360;
+  return x;
+}
+
+/// Diagrama fasorial + tabla de magnitud/ángulo por canal. Ángulos relativos a
+/// la primera tensión visible (o corriente si no hay tensión). Corrientes y
+/// tensiones se normalizan por separado en el diagrama (escalas distintas).
+function Phasors({ series, show, spc }: { series: number[][]; show: boolean[]; spc: number }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const ph = series.map((s, ch) => (show[ch] ? phasorOf(s, spc) : null));
+  // Referencia de ángulo: VA..VN primero, luego IA..IN.
+  const refIdx = [4, 5, 6, 7, 0, 1, 2, 3].find((i) => ph[i] != null);
+  const refDeg = refIdx != null ? ph[refIdx]!.deg : 0;
+  const maxI = Math.max(...ph.slice(0, 4).map((p) => p?.rms ?? 0));
+  const maxV = Math.max(...ph.slice(4).map((p) => p?.rms ?? 0));
+
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext("2d");
+    if (!c || !ctx) return;
+    const W = c.width;
+    const H = c.height;
+    const cx = W / 2;
+    const cy = H / 2;
+    const R = Math.min(W, H) / 2 - 18;
+    ctx.clearRect(0, 0, W, H);
+
+    // Retícula polar: 3 círculos + ejes cada 30°.
+    ctx.strokeStyle = "rgba(128,128,128,0.15)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, (R * i) / 3, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    for (let a = 0; a < 360; a += 30) {
+      const r = (a * Math.PI) / 180;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + R * Math.cos(r), cy - R * Math.sin(r));
+    }
+    ctx.stroke();
+
+    for (let ch = 0; ch < ph.length; ch++) {
+      const p = ph[ch];
+      if (!p) continue;
+      const base = ch < 4 ? maxI : maxV;
+      if (base <= 0) continue;
+      const len = R * Math.min(p.rms / base, 1);
+      const ang = ((p.deg - refDeg) * Math.PI) / 180;
+      const x = cx + len * Math.cos(ang);
+      const y = cy - len * Math.sin(ang);
+      ctx.strokeStyle = SV_COLORS[ch];
+      ctx.fillStyle = SV_COLORS[ch];
+      // Corrientes con trazo discontinuo para distinguirlas de las tensiones.
+      ctx.setLineDash(ch < 4 ? [5, 3] : []);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText(SV_CH[ch], x + (x >= cx ? 5 : -22), y + (y >= cy ? 12 : -5));
+    }
+  });
+
+  const fmtMag = (ch: number, rms: number) =>
+    ch < 4 ? `${(rms * 0.001).toFixed(3)} A` : `${(rms * 0.01).toFixed(2)} V`;
+
+  return (
+    <Group align="start" gap="md" wrap="nowrap">
+      <canvas
+        ref={ref}
+        width={280}
+        height={280}
+        style={{
+          background: "var(--mantine-color-body)",
+          border: "1px solid var(--mantine-color-default-border)",
+          borderRadius: 4,
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Table fz="xs" ff="monospace">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={60}>Canal</Table.Th>
+              <Table.Th w={120}>RMS</Table.Th>
+              <Table.Th w={120}>RMS (crudo)</Table.Th>
+              <Table.Th w={100}>Ángulo</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {ph.map((p, ch) =>
+              p ? (
+                <Table.Tr key={ch}>
+                  <Table.Td>
+                    <Group gap={4} wrap="nowrap">
+                      <span style={{ width: 10, height: 10, borderRadius: 2, background: SV_COLORS[ch], display: "inline-block" }} />
+                      {SV_CH[ch]}
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>{fmtMag(ch, p.rms)}</Table.Td>
+                  <Table.Td>{p.rms.toFixed(1)}</Table.Td>
+                  <Table.Td>
+                    {normDeg(p.deg - refDeg).toFixed(1)}°{ch === refIdx ? " (ref)" : ""}
+                  </Table.Td>
+                </Table.Tr>
+              ) : null,
+            )}
+          </Table.Tbody>
+        </Table>
+        <Text size="xs" c="dimmed" mt={4}>
+          DFT de un bin sobre ciclos completos de la ventana. Unidades 9-2LE: corriente 1 mA,
+          tensión 10 mV por cuenta. Ángulos relativos a {refIdx != null ? SV_CH[refIdx] : "—"};
+          corrientes con trazo discontinuo.
+        </Text>
+      </div>
+    </Group>
+  );
+}
+
 type ConnInfo = { id: string; tls: boolean; active: boolean };
 /** Perfil de conexión guardado (persistido por el backend en connections.json). */
 type Profile = {
@@ -568,6 +718,9 @@ export default function App() {
   const monSeq = useRef(0);
   const [svSeries, setSvSeries] = useState<number[][]>(() => Array.from({ length: 8 }, () => []));
   const [svShow, setSvShow] = useState<boolean[]>([true, true, true, true, false, false, false, false]);
+  // Vista del visor SV: forma de onda u fasores; muestras por ciclo para el DFT.
+  const [svView, setSvView] = useState<"wave" | "phasor">("wave");
+  const [svSpc, setSvSpc] = useState(80);
   const statsRef = useRef<{ goose: Map<string, GAcc>; sv: Map<string, SAcc> }>({
     goose: new Map(),
     sv: new Map(),
@@ -3010,7 +3163,33 @@ export default function App() {
               </Group>
 
               <Paper withBorder p="xs" radius="md">
-                <Waveform series={svSeries} show={svShow} />
+                <Group justify="space-between" align="end" mb="xs">
+                  <SegmentedControl
+                    size="xs"
+                    value={svView}
+                    onChange={(v) => setSvView(v as "wave" | "phasor")}
+                    data={[
+                      { label: "Forma de onda", value: "wave" },
+                      { label: "Fasores", value: "phasor" },
+                    ]}
+                  />
+                  {svView === "phasor" && (
+                    <NumberInput
+                      size="xs"
+                      w={140}
+                      label="Muestras por ciclo"
+                      min={4}
+                      max={512}
+                      value={svSpc}
+                      onChange={(v) => setSvSpc(Math.max(4, Number(v) || 80))}
+                    />
+                  )}
+                </Group>
+                {svView === "wave" ? (
+                  <Waveform series={svSeries} show={svShow} />
+                ) : (
+                  <Phasors series={svSeries} show={svShow} spc={svSpc} />
+                )}
                 <Group gap="md" mt="xs">
                   {SV_CH.map((label, ch) => (
                     <Checkbox
