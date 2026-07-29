@@ -34,9 +34,12 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import {
+  IconBookmark,
   IconBroadcast,
   IconChevronDown,
   IconChevronUp,
+  IconDeviceFloppy,
+  IconHistory,
   IconDatabase,
   IconDownload,
   IconEye,
@@ -214,6 +217,25 @@ function Waveform({ series, show }: { series: number[][]; show: boolean[] }) {
 }
 
 type ConnInfo = { id: string; tls: boolean; active: boolean };
+/** Perfil de conexión guardado (persistido por el backend en connections.json). */
+type Profile = {
+  name: string;
+  addr: string;
+  tls: boolean;
+  serverName: string;
+  ca: string;
+  cert: string;
+  key: string;
+};
+/** Entrada del registro de auditoría local (audit.jsonl). */
+type AuditRow = {
+  tsMs: number;
+  conn: string;
+  action: string;
+  reference: string;
+  detail: string;
+  result: string;
+};
 type FoundIed = { addr: string; vendor: string | null; model: string | null; revision: string | null };
 type PubInfo = { kind: string; id: string; label: string; dat_set: string; appid: number; src: string; conf_rev: number; count: number };
 type FileEntryP = { name: string; size: number; last_modified: string | null };
@@ -269,6 +291,7 @@ const SECTION_META: Record<string, { title: string; desc: string; norm: string; 
   bus: { title: "Bus de estación", desc: "Monitor y publicación GOOSE / Sampled Values en la capa 2", norm: "IEC 61850-8-1 / 9-2LE", icon: <IconRss size={22} /> },
   comparar: { title: "Comparar SCL ↔ online", desc: "Diferencias entre el archivo de ingeniería y el dispositivo", norm: "IEC 61850-6 · SCL", icon: <IconGitCompare size={22} /> },
   ficheros: { title: "Ficheros del IED", desc: "Registros de perturbación, COMTRADE y logs (file transfer MMS)", norm: "IEC 61850-8-1 · Ficheros", icon: <IconFolder size={22} /> },
+  auditoria: { title: "Auditoría", desc: "Registro local de maniobras, escrituras y sesiones de esta estación de trabajo", norm: "IEC 62351 · Trazabilidad", icon: <IconHistory size={22} /> },
 };
 
 /** Cabecera de sección: eyebrow normativo + título + regla con terminal de cobre. */
@@ -407,6 +430,14 @@ export default function App() {
   const [tlsCa, setTlsCa] = useState("");
   const [tlsCert, setTlsCert] = useState("");
   const [tlsKey, setTlsKey] = useState("");
+
+  // Conexiones guardadas (perfiles persistidos por el backend).
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profName, setProfName] = useState("");
+  // Auditoría local de operaciones.
+  const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [auditFilter, setAuditFilter] = useState("");
+  const [auditFile, setAuditFile] = useState("");
 
   const [domains, setDomains] = useState<DomainItems[]>([]);
   const [query, setQuery] = useState("");
@@ -593,6 +624,28 @@ export default function App() {
       fail(e);
     }
   }
+
+  // Perfiles guardados: cargar al arrancar.
+  useEffect(() => {
+    invoke<Profile[]>("profiles_list")
+      .then(setProfiles)
+      .catch(() => {});
+  }, []);
+
+  // Auditoría: refrescar al entrar en la sección.
+  useEffect(() => {
+    if (activeTab === "auditoria") refreshAudit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Entradas de auditoría visibles según el filtro de texto.
+  const auditShown = useMemo(() => {
+    const q = auditFilter.trim().toLowerCase();
+    if (!q) return audit;
+    return audit.filter((a) =>
+      [a.conn, a.action, a.reference, a.detail, a.result].some((s) => s.toLowerCase().includes(q)),
+    );
+  }, [audit, auditFilter]);
 
   useEffect(() => {
     const un = listen<Omit<ReportRow, "t" | "n">>("report", (e) => {
@@ -957,6 +1010,101 @@ export default function App() {
       fail(e);
     }
   }
+  // --- Conexiones guardadas ---
+  async function saveCurrentProfile() {
+    if (!addr.trim()) {
+      fail("no hay dirección que guardar");
+      return;
+    }
+    const name = profName.trim() || addr.trim();
+    const p: Profile = {
+      name,
+      addr: addr.trim(),
+      tls: tlsOn,
+      serverName: tlsServerName,
+      ca: tlsCa,
+      cert: tlsCert,
+      key: tlsKey,
+    };
+    try {
+      setProfiles(await invoke<Profile[]>("profile_save", { profile: p }));
+      setProfName("");
+      ok(`conexión «${name}» guardada`);
+    } catch (e) {
+      fail(e);
+    }
+  }
+  async function deleteProfile(name: string) {
+    try {
+      setProfiles(await invoke<Profile[]>("profile_delete", { name }));
+    } catch (e) {
+      fail(e);
+    }
+  }
+  // Conecta con un perfil guardado (rellena también los campos de la barra).
+  async function connectProfile(p: Profile) {
+    setAddr(p.addr);
+    setTlsOn(p.tls);
+    if (p.tls) {
+      setTlsServerName(p.serverName);
+      setTlsCa(p.ca);
+      setTlsCert(p.cert);
+      setTlsKey(p.key);
+    }
+    try {
+      if (p.tls) {
+        const neg = await invoke<string>("connect_tls", {
+          addr: p.addr,
+          serverName: p.serverName,
+          ca: p.ca,
+          cert: p.cert,
+          key: p.key,
+        });
+        setStatus(neg);
+        await refreshConns();
+        await switchView();
+        ok(`conectado a «${p.name}» (TLS)`);
+      } else {
+        await connectTo(p.addr);
+        ok(`conectado a «${p.name}»`);
+      }
+    } catch (e) {
+      fail(e);
+    }
+  }
+  // Copia los PEM tecleados a la carpeta gestionada de la app y usa esas rutas:
+  // el perfil sobrevive aunque el usuario mueva o borre los originales.
+  async function importCerts() {
+    try {
+      let n = 0;
+      if (tlsCa.trim()) {
+        setTlsCa(await invoke<string>("import_cert", { path: tlsCa.trim() }));
+        n++;
+      }
+      if (tlsCert.trim()) {
+        setTlsCert(await invoke<string>("import_cert", { path: tlsCert.trim() }));
+        n++;
+      }
+      if (tlsKey.trim()) {
+        setTlsKey(await invoke<string>("import_cert", { path: tlsKey.trim() }));
+        n++;
+      }
+      if (n) ok(`${n} fichero(s) copiados a la carpeta de la app`);
+      else fail("no hay rutas PEM que importar");
+    } catch (e) {
+      fail(e);
+    }
+  }
+  // --- Auditoría ---
+  async function refreshAudit() {
+    try {
+      setAudit(await invoke<AuditRow[]>("audit_list", { limit: 1000 }));
+      if (!auditFile) setAuditFile(await invoke<string>("audit_path"));
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function switchTo(id: string) {
     try {
       await invoke("set_active", { id });
@@ -1410,6 +1558,81 @@ export default function App() {
             onChange={(e) => setAddr(e.currentTarget.value)}
             placeholder="IED  192.168.1.10:102"
           />
+          <Popover width={360} position="bottom-start" withArrow shadow="md">
+            <Popover.Target>
+              <ActionIcon
+                size="lg"
+                variant={profiles.length > 0 ? "light" : "default"}
+                color={profiles.length > 0 ? "brand" : "gray"}
+                title="Conexiones guardadas"
+              >
+                <IconBookmark size={16} />
+              </ActionIcon>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <Stack gap="xs">
+                <Text fw={600} size="sm">
+                  Conexiones guardadas
+                </Text>
+                {profiles.length === 0 ? (
+                  <Text size="xs" c="dimmed">
+                    Nada guardado aún. Rellena la dirección (y el TLS si aplica) y guárdala aquí
+                    con un nombre para conectar con un clic.
+                  </Text>
+                ) : (
+                  <Stack gap={4}>
+                    {profiles.map((p) => (
+                      <Group key={p.name} gap={6} wrap="nowrap" justify="space-between">
+                        <Button
+                          size="compact-xs"
+                          variant="subtle"
+                          color={p.tls ? "teal" : "blue"}
+                          leftSection={p.tls ? <IconLock size={12} /> : <IconPlugConnected size={12} />}
+                          style={{ flex: 1, justifyContent: "flex-start", minWidth: 0 }}
+                          onClick={() => connectProfile(p)}
+                          title={`conectar a ${p.addr}`}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {p.name} · {p.addr}
+                          </span>
+                        </Button>
+                        <ActionIcon
+                          size="sm"
+                          variant="subtle"
+                          color="red"
+                          title="Borrar perfil"
+                          onClick={() => deleteProfile(p.name)}
+                        >
+                          <IconTrash size={13} />
+                        </ActionIcon>
+                      </Group>
+                    ))}
+                  </Stack>
+                )}
+                <Divider />
+                <Group gap={4} wrap="nowrap">
+                  <TextInput
+                    size="xs"
+                    style={{ flex: 1 }}
+                    placeholder="Nombre (p. ej. Bahía 3 · SEL-451)"
+                    value={profName}
+                    onChange={(e) => setProfName(e.currentTarget.value)}
+                  />
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconDeviceFloppy size={14} />}
+                    onClick={saveCurrentProfile}
+                  >
+                    Guardar actual
+                  </Button>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  Guarda la dirección tecleada arriba, con su configuración TLS si está activa.
+                </Text>
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
           <ActionIcon size="lg" variant="default" title="Buscar IEDs en la red" onClick={() => setScanOpen(true)}>
             <IconScan size={16} />
           </ActionIcon>
@@ -1471,6 +1694,18 @@ export default function App() {
                     </ActionIcon>
                   }
                 />
+                <Button
+                  size="xs"
+                  variant="default"
+                  leftSection={<IconFileImport size={14} />}
+                  onClick={importCerts}
+                >
+                  Importar los PEM a la app
+                </Button>
+                <Text size="xs" c="dimmed">
+                  Copia los ficheros de arriba a la carpeta de la app: los perfiles guardados
+                  seguirán funcionando aunque muevas o borres los originales.
+                </Text>
                 <Button size="xs" variant="light" color="grape" onClick={doConnectTlsDemo}>
                   Probar TLS con el simulador
                 </Button>
@@ -1666,6 +1901,7 @@ export default function App() {
               // Ingeniería / mantenimiento: puesta en marcha y verificación.
               { v: "comparar", label: "Comparar SCL ↔ online", icon: <IconGitCompare size={20} />, n: 0 },
               { v: "ficheros", label: "Ficheros del IED", icon: <IconFolder size={20} />, n: files.length },
+              { v: "auditoria", label: "Auditoría de operaciones", icon: <IconHistory size={20} />, n: 0 },
             ].map((s, i) =>
               "zone" in s ? (
                 <div
@@ -2747,6 +2983,96 @@ export default function App() {
                             >
                               Descargar
                             </Button>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="auditoria" pt="sm">
+            <Stack gap="sm">
+              <Group align="end" gap="xs">
+                <TextInput
+                  size="xs"
+                  w={260}
+                  placeholder="Filtrar (conexión, acción, referencia…)"
+                  leftSection={<IconSearch size={14} />}
+                  value={auditFilter}
+                  onChange={(e) => setAuditFilter(e.currentTarget.value)}
+                />
+                <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} onClick={refreshAudit}>
+                  Refrescar
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconDownload size={14} />}
+                  onClick={() =>
+                    exportCsv(
+                      "auditoria.csv",
+                      ["fecha", "conexion", "accion", "referencia", "detalle", "resultado"],
+                      auditShown.map((a) => [
+                        new Date(a.tsMs).toISOString(),
+                        a.conn,
+                        a.action,
+                        a.reference,
+                        a.detail,
+                        a.result,
+                      ]),
+                    )
+                  }
+                >
+                  Exportar CSV
+                </Button>
+                <Text size="xs" c="dimmed">
+                  Cada conexión, escritura y maniobra hecha desde esta estación queda registrada
+                  {auditFile ? ` en ${auditFile}` : ""}.
+                </Text>
+              </Group>
+              {auditShown.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  {audit.length === 0
+                    ? "Sin operaciones registradas todavía."
+                    : "Ninguna entrada coincide con el filtro."}
+                </Text>
+              ) : (
+                <ScrollArea h={460}>
+                  <Table striped withTableBorder stickyHeader fz="xs" ff="monospace">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th w={170}>Fecha</Table.Th>
+                        <Table.Th w={150}>Conexión</Table.Th>
+                        <Table.Th w={100}>Acción</Table.Th>
+                        <Table.Th>Referencia</Table.Th>
+                        <Table.Th>Detalle</Table.Th>
+                        <Table.Th w={180}>Resultado</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {auditShown.map((a, i) => (
+                        <Table.Tr key={`${a.tsMs}-${i}`}>
+                          <Table.Td>{new Date(a.tsMs).toLocaleString()}</Table.Td>
+                          <Table.Td>{a.conn}</Table.Td>
+                          <Table.Td>{a.action}</Table.Td>
+                          <Table.Td>{a.reference}</Table.Td>
+                          <Table.Td>{a.detail}</Table.Td>
+                          <Table.Td>
+                            <Badge
+                              size="sm"
+                              variant="light"
+                              color={
+                                a.result.startsWith("error") || a.result === "denegado"
+                                  ? "red"
+                                  : "teal"
+                              }
+                              title={a.result}
+                              style={{ maxWidth: 170 }}
+                            >
+                              {a.result}
+                            </Badge>
                           </Table.Td>
                         </Table.Tr>
                       ))}

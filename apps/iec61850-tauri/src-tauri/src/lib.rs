@@ -25,8 +25,8 @@ use iec61850::model::{BasicType, DataAttribute, DataObject, FunctionalConstraint
 use iec61850::sv::{
     ETHERTYPE_SV, NineTwoLe, SvChannel, SvConfig, SvEventKind, SvFilter, SvPublisher, SvSubscriber,
 };
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
@@ -51,8 +51,7 @@ const SIM_TLS_SERVER_NAME: &str = "iec61850-sim";
 /// (Linux) o Npcap (Windows); en otros SO (p. ej. macOS) no hay backend. El
 /// resto de la app (MMS/TCP, SCL, IED en vivo) funciona en cualquier SO.
 #[cfg(not(any(target_os = "linux", windows)))]
-const L2_UNSUPPORTED: &str =
-    "captura capa 2 (GOOSE/SV/PCAP) no disponible en este sistema operativo: requiere Linux o Windows (con Npcap)";
+const L2_UNSUPPORTED: &str = "captura capa 2 (GOOSE/SV/PCAP) no disponible en este sistema operativo: requiere Linux o Windows (con Npcap)";
 
 /// Tareas del simulador IED en marcha (servidor + variación de medida).
 struct SimHandle {
@@ -221,7 +220,14 @@ async fn connect(
     state: State<'_, AppState>,
     addr: String,
 ) -> Result<String, String> {
-    let mut c = MmsClient::connect(&addr).await.map_err(|e| e.to_string())?;
+    let mut c = match MmsClient::connect(&addr).await {
+        Ok(c) => c,
+        Err(e) => {
+            audit(&app, &addr, "connect", "", "", &format!("error: {e}"));
+            return Err(e.to_string());
+        }
+    };
+    audit(&app, &addr, "connect", "", "", "ok");
     let neg = format!("asociado (MMS v{})", c.negotiated().version);
     let id = addr.clone();
     // Reenvía los reportes no solicitados al frontend como eventos (etiquetados con su IED).
@@ -261,9 +267,21 @@ async fn connect_tls(
         .map_err(|e| e.to_string())?
         .connector()
         .map_err(|e| e.to_string())?;
-    let mut c = MmsClient::connect_tls(&addr, &server_name, connector)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut c = match MmsClient::connect_tls(&addr, &server_name, connector).await {
+        Ok(c) => c,
+        Err(e) => {
+            audit(
+                &app,
+                &addr,
+                "connect-tls",
+                "",
+                &server_name,
+                &format!("error: {e}"),
+            );
+            return Err(e.to_string());
+        }
+    };
+    audit(&app, &addr, "connect-tls", "", &server_name, "ok");
     let neg = format!("asociado TLS (MMS v{})", c.negotiated().version);
     let id = addr.clone();
     if let Some(mut rx) = c.take_report_rx() {
@@ -296,9 +314,21 @@ async fn connect_tls_demo(app: AppHandle, state: State<'_, AppState>) -> Result<
         .map_err(|e| e.to_string())?
         .connector()
         .map_err(|e| e.to_string())?;
-    let mut c = MmsClient::connect_tls(&addr, SIM_TLS_SERVER_NAME, connector)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut c = match MmsClient::connect_tls(&addr, SIM_TLS_SERVER_NAME, connector).await {
+        Ok(c) => c,
+        Err(e) => {
+            audit(
+                &app,
+                &addr,
+                "connect-tls",
+                "",
+                "demo embebido",
+                &format!("error: {e}"),
+            );
+            return Err(e.to_string());
+        }
+    };
+    audit(&app, &addr, "connect-tls", "", "demo embebido", "ok");
     let neg = format!("asociado TLS (MMS v{})", c.negotiated().version);
     let id = addr.clone();
     if let Some(mut rx) = c.take_report_rx() {
@@ -350,11 +380,13 @@ async fn set_active(state: State<'_, AppState>, id: String) -> Result<(), String
 
 /// Cierra la conexión activa y activa otra si queda alguna.
 #[tauri::command]
-async fn disconnect(state: State<'_, AppState>) -> Result<(), String> {
+async fn disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let id = state.active.lock().await.clone();
     let mut clients = state.clients.lock().await;
     if let Some(id) = &id {
-        clients.remove(id); // Drop aborta la tarea lectora.
+        if clients.remove(id).is_some() {
+            audit(&app, id, "disconnect", "", "", "ok");
+        }
     }
     let next = clients.keys().next().cloned();
     drop(clients);
@@ -364,9 +396,15 @@ async fn disconnect(state: State<'_, AppState>) -> Result<(), String> {
 
 /// Cierra una conexión concreta por su id.
 #[tauri::command]
-async fn disconnect_id(state: State<'_, AppState>, id: String) -> Result<(), String> {
+async fn disconnect_id(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let mut clients = state.clients.lock().await;
-    clients.remove(&id);
+    if clients.remove(&id).is_some() {
+        audit(&app, &id, "disconnect", "", "", "ok");
+    }
     let next = clients.keys().next().cloned();
     drop(clients);
     let mut active = state.active.lock().await;
@@ -380,6 +418,192 @@ async fn disconnect_id(state: State<'_, AppState>, id: String) -> Result<(), Str
 #[tauri::command]
 async fn save_text(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("guardar {path}: {e}"))
+}
+
+// --- Conexiones guardadas (perfiles) ---
+
+/// Perfil de conexión guardado por el usuario. Persiste en
+/// `<config de la app>/connections.json`; los campos TLS son rutas a PEM
+/// (idealmente ya importados a la carpeta gestionada, ver `import_cert`).
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Profile {
+    name: String,
+    addr: String,
+    tls: bool,
+    #[serde(default)]
+    server_name: String,
+    #[serde(default)]
+    ca: String,
+    #[serde(default)]
+    cert: String,
+    #[serde(default)]
+    key: String,
+}
+
+/// Directorio de configuración de la app (se crea si no existe).
+fn config_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("crear {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Directorio de datos de la app (auditoría; se crea si no existe).
+fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("crear {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+fn load_profiles(app: &AppHandle) -> Result<Vec<Profile>, String> {
+    let path = config_dir(app)?.join("connections.json");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let txt =
+        std::fs::read_to_string(&path).map_err(|e| format!("leer {}: {e}", path.display()))?;
+    serde_json::from_str(&txt).map_err(|e| format!("parsear {}: {e}", path.display()))
+}
+
+fn store_profiles(app: &AppHandle, list: &[Profile]) -> Result<(), String> {
+    let path = config_dir(app)?.join("connections.json");
+    let txt = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+    std::fs::write(&path, txt).map_err(|e| format!("guardar {}: {e}", path.display()))
+}
+
+/// Lista los perfiles de conexión guardados.
+#[tauri::command]
+async fn profiles_list(app: AppHandle) -> Result<Vec<Profile>, String> {
+    load_profiles(&app)
+}
+
+/// Guarda (o reemplaza, por nombre) un perfil de conexión. Devuelve la lista.
+#[tauri::command]
+async fn profile_save(app: AppHandle, profile: Profile) -> Result<Vec<Profile>, String> {
+    if profile.name.trim().is_empty() || profile.addr.trim().is_empty() {
+        return Err("el perfil necesita nombre y dirección".into());
+    }
+    let mut list = load_profiles(&app)?;
+    list.retain(|p| p.name != profile.name);
+    list.push(profile);
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    store_profiles(&app, &list)?;
+    Ok(list)
+}
+
+/// Borra un perfil por nombre. Devuelve la lista resultante.
+#[tauri::command]
+async fn profile_delete(app: AppHandle, name: String) -> Result<Vec<Profile>, String> {
+    let mut list = load_profiles(&app)?;
+    list.retain(|p| p.name != name);
+    store_profiles(&app, &list)?;
+    Ok(list)
+}
+
+/// Copia un PEM a la carpeta gestionada de la app (`<config>/certs/`) y
+/// devuelve la nueva ruta: el perfil deja de depender de rutas del usuario.
+#[tauri::command]
+async fn import_cert(app: AppHandle, path: String) -> Result<String, String> {
+    let src = std::path::PathBuf::from(&path);
+    let name = src
+        .file_name()
+        .ok_or_else(|| format!("ruta sin nombre de fichero: {path}"))?;
+    let dir = config_dir(&app)?.join("certs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("crear {}: {e}", dir.display()))?;
+    let dst = dir.join(name);
+    std::fs::copy(&src, &dst).map_err(|e| format!("copiar {path}: {e}"))?;
+    Ok(dst.to_string_lossy().into_owned())
+}
+
+// --- Auditoría local de operaciones ---
+
+/// Una entrada del registro de auditoría (una línea JSON en `audit.jsonl`).
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AuditEntry {
+    /// Milisegundos epoch del momento de la operación.
+    ts_ms: u64,
+    /// Conexión (id `ip:puerto`) sobre la que se operó.
+    conn: String,
+    /// Acción: connect / disconnect / write / operate / select / rcb-write / …
+    action: String,
+    /// Referencia IEC 61850 afectada (vacía si no aplica).
+    reference: String,
+    /// Detalle legible (valor escrito, parámetros…).
+    detail: String,
+    /// Resultado: "ok", "concedido"/"denegado" (select) o "error: …".
+    result: String,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Añade una entrada al registro (best effort: nunca hace fallar la operación).
+fn audit(app: &AppHandle, conn: &str, action: &str, reference: &str, detail: &str, result: &str) {
+    let entry = AuditEntry {
+        ts_ms: now_ms(),
+        conn: conn.to_string(),
+        action: action.to_string(),
+        reference: reference.to_string(),
+        detail: detail.to_string(),
+        result: result.to_string(),
+    };
+    let Ok(dir) = data_dir(app) else { return };
+    let Ok(line) = serde_json::to_string(&entry) else {
+        return;
+    };
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("audit.jsonl"))
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+/// Resultado → texto de auditoría.
+fn outcome<T>(r: &Result<T, String>) -> String {
+    match r {
+        Ok(_) => "ok".to_string(),
+        Err(e) => format!("error: {e}"),
+    }
+}
+
+/// Id de la conexión activa (o vacío), para etiquetar la auditoría.
+async fn active_id(state: &State<'_, AppState>) -> String {
+    state.active.lock().await.clone().unwrap_or_default()
+}
+
+/// Devuelve las últimas `limit` entradas de auditoría, la más reciente primero.
+#[tauri::command]
+async fn audit_list(app: AppHandle, limit: Option<usize>) -> Result<Vec<AuditEntry>, String> {
+    let path = data_dir(&app)?.join("audit.jsonl");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let txt =
+        std::fs::read_to_string(&path).map_err(|e| format!("leer {}: {e}", path.display()))?;
+    let mut out: Vec<AuditEntry> = txt
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    out.reverse();
+    out.truncate(limit.unwrap_or(1000).clamp(1, 10_000));
+    Ok(out)
+}
+
+/// Ruta del fichero de auditoría (para mostrarla en la UI).
+#[tauri::command]
+async fn audit_path(app: AppHandle) -> Result<String, String> {
+    Ok(data_dir(&app)?
+        .join("audit.jsonl")
+        .to_string_lossy()
+        .into_owned())
 }
 
 /// Captura a un archivo **PCAP** (abrible en Wireshark) todo el tráfico de la
@@ -781,7 +1005,9 @@ async fn rcb_read(state: State<'_, AppState>, rcb: String) -> Result<RcbParams, 
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // parámetros del RCB tal como los manda la UI
 async fn rcb_write(
+    app: AppHandle,
     state: State<'_, AppState>,
     rcb: String,
     dat_set: Option<String>,
@@ -791,84 +1017,161 @@ async fn rcb_write(
     opt_flds: Option<Vec<bool>>,
 ) -> Result<(), String> {
     let c = current(&state).await?;
-    if let Some(s) = dat_set {
-        write_attr(&c, &rcb, "DatSet", MmsData::Visible(s)).await?;
+    let conn = active_id(&state).await;
+    let mut detail: Vec<String> = Vec::new();
+    if let Some(s) = &dat_set {
+        detail.push(format!("DatSet={s}"));
     }
     if let Some(p) = intg_pd {
-        write_attr(&c, &rcb, "IntgPd", MmsData::Uint(p)).await?;
+        detail.push(format!("IntgPd={p}"));
     }
     if let Some(b) = buf_tm {
-        write_attr(&c, &rcb, "BufTm", MmsData::Uint(b)).await?;
+        detail.push(format!("BufTm={b}"));
     }
-    if let Some(bits) = trg_ops {
-        write_attr(
-            &c,
-            &rcb,
-            "TrgOps",
-            MmsData::BitString(BitString::from_bits(&bits)),
-        )
-        .await?;
+    if trg_ops.is_some() {
+        detail.push("TrgOps".into());
     }
-    if let Some(bits) = opt_flds {
-        write_attr(
-            &c,
-            &rcb,
-            "OptFlds",
-            MmsData::BitString(BitString::from_bits(&bits)),
-        )
-        .await?;
+    if opt_flds.is_some() {
+        detail.push("OptFlds".into());
     }
-    Ok(())
+    let res: Result<(), String> = async {
+        if let Some(s) = dat_set {
+            write_attr(&c, &rcb, "DatSet", MmsData::Visible(s)).await?;
+        }
+        if let Some(p) = intg_pd {
+            write_attr(&c, &rcb, "IntgPd", MmsData::Uint(p)).await?;
+        }
+        if let Some(b) = buf_tm {
+            write_attr(&c, &rcb, "BufTm", MmsData::Uint(b)).await?;
+        }
+        if let Some(bits) = trg_ops {
+            write_attr(
+                &c,
+                &rcb,
+                "TrgOps",
+                MmsData::BitString(BitString::from_bits(&bits)),
+            )
+            .await?;
+        }
+        if let Some(bits) = opt_flds {
+            write_attr(
+                &c,
+                &rcb,
+                "OptFlds",
+                MmsData::BitString(BitString::from_bits(&bits)),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+    .await;
+    audit(
+        &app,
+        &conn,
+        "rcb-write",
+        &rcb,
+        &detail.join(", "),
+        &outcome(&res),
+    );
+    res
 }
 
 #[tauri::command]
-async fn enable_report(state: State<'_, AppState>, rcb: String) -> Result<(), String> {
+async fn enable_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    rcb: String,
+) -> Result<(), String> {
     let c = current(&state).await?;
+    let conn = active_id(&state).await;
     let obj = parse_ref(&rcb)?;
-    c.enable_report(&obj, &Default::default())
+    let res = c
+        .enable_report(&obj, &Default::default())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    audit(&app, &conn, "rpt-enable", &rcb, "", &outcome(&res));
+    res
 }
 
 #[tauri::command]
-async fn disable_report(state: State<'_, AppState>, rcb: String) -> Result<(), String> {
+async fn disable_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    rcb: String,
+) -> Result<(), String> {
     let c = current(&state).await?;
+    let conn = active_id(&state).await;
     let obj = parse_ref(&rcb)?;
-    c.disable_report(&obj).await.map_err(|e| e.to_string())
+    let res = c.disable_report(&obj).await.map_err(|e| e.to_string());
+    audit(&app, &conn, "rpt-disable", &rcb, "", &outcome(&res));
+    res
 }
 
 #[tauri::command]
 async fn write(
+    app: AppHandle,
     state: State<'_, AppState>,
     reference: String,
     kind: String,
     value: String,
 ) -> Result<(), String> {
     let c = current(&state).await?;
+    let conn = active_id(&state).await;
     let obj = parse_ref(&reference)?;
     let val = parse_value(&kind, &value)?;
-    c.write(&obj, val).await.map_err(|e| e.to_string())
+    let res = c.write(&obj, val).await.map_err(|e| e.to_string());
+    audit(
+        &app,
+        &conn,
+        "write",
+        &reference,
+        &format!("{value} ({kind})"),
+        &outcome(&res),
+    );
+    res
 }
 
 #[tauri::command]
 async fn operate(
+    app: AppHandle,
     state: State<'_, AppState>,
     reference: String,
     kind: String,
     value: String,
 ) -> Result<(), String> {
     let c = current(&state).await?;
+    let conn = active_id(&state).await;
     let obj = parse_ref(&reference)?;
     let val = parse_value(&kind, &value)?;
-    c.operate(&obj, val).await.map_err(|e| e.to_string())
+    let res = c.operate(&obj, val).await.map_err(|e| e.to_string());
+    audit(
+        &app,
+        &conn,
+        "operate",
+        &reference,
+        &format!("ctlVal {value} ({kind})"),
+        &outcome(&res),
+    );
+    res
 }
 
 #[tauri::command]
-async fn select(state: State<'_, AppState>, reference: String) -> Result<String, String> {
+async fn select(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    reference: String,
+) -> Result<String, String> {
     let c = current(&state).await?;
+    let conn = active_id(&state).await;
     let obj = parse_ref(&reference)?;
-    let granted = c.select(&obj).await.map_err(|e| e.to_string())?;
-    Ok(if granted { "concedido" } else { "denegado" }.to_string())
+    let res = c.select(&obj).await.map_err(|e| e.to_string());
+    let out = match &res {
+        Ok(true) => "concedido".to_string(),
+        Ok(false) => "denegado".to_string(),
+        Err(e) => format!("error: {e}"),
+    };
+    audit(&app, &conn, "select", &reference, "", &out);
+    res.map(|granted| if granted { "concedido" } else { "denegado" }.to_string())
 }
 
 /// Primer measurand flotante (FC=MX) del modelo: candidato a variar en vivo.
@@ -1655,6 +1958,12 @@ pub fn run() {
             connections,
             set_active,
             save_text,
+            profiles_list,
+            profile_save,
+            profile_delete,
+            import_cert,
+            audit_list,
+            audit_path,
             capture_pcap,
             file_directory,
             download_file,
