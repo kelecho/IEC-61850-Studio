@@ -1828,35 +1828,141 @@ async fn sv_stop(state: State<'_, AppState>) -> Result<(), String> {
 #[cfg(any(target_os = "linux", windows))]
 const DEMO_SRC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
 
-/// Publica GOOSE de demo en `iface` (alterna un booleano cada 2 s).
+/// Crea un publicador GOOSE de demo con identidad propia (APPID, MAC, gocbRef).
+#[cfg(any(target_os = "linux", windows))]
+fn goose_demo_pub(
+    iface: &str,
+    appid: u16,
+    last: u8,
+    cb: &str,
+    simulation: bool,
+) -> Result<iec61850::goose::PublisherHandle, String> {
+    let dst: [u8; 6] = [0x01, 0x0C, 0xCD, 0x01, 0x00, last];
+    let mut src = DEMO_SRC;
+    src[5] = src[5].wrapping_add(last);
+    let sock = RawSocket::open(iface, ETHERTYPE_GOOSE, dst)
+        .map_err(|e| format!("abrir socket GOOSE en {iface}: {e} (¿CAP_NET_RAW/root?)"))?;
+    let mut cfg = GooseConfig::new(dst, src, appid, format!("DEMO/LLN0$GO$gcb{cb}"));
+    cfg.dat_set = format!("DEMO/LLN0$ds{cb}");
+    cfg.go_id = format!("DEMO_{}", cb.to_uppercase());
+    cfg.simulation = simulation; // bit de simulación Ed.2 (pruebas de esquemas)
+    Ok(GoosePublisher::new(sock, cfg).start())
+}
+
+/// `Dbpos` (posición doble) como BitString de 2 bits: 00 intermedio, 01 abierto,
+/// 10 cerrado, 11 erróneo.
+#[cfg(any(target_os = "linux", windows))]
+fn dbpos(b0: bool, b1: bool) -> MmsData {
+    MmsData::BitString(BitString::from_bits(&[b0, b1]))
+}
+
+/// Bucle «maniobra»: un interruptor que se selecciona, pasa por intermedio y
+/// conmuta — ejercita el diff de datos (cambios de Dbpos y de selected).
+#[cfg(any(target_os = "linux", windows))]
+async fn goose_loop_maniobra(p: iec61850::goose::PublisherHandle) {
+    let mut closed = true;
+    loop {
+        // Reposo en la posición actual.
+        let pos = if closed {
+            dbpos(true, false)
+        } else {
+            dbpos(false, true)
+        };
+        let _ = p.publish(vec![pos.clone(), MmsData::Bool(false)]).await;
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        // Selección (SBO) → intermedio breve → posición contraria.
+        let _ = p.publish(vec![pos, MmsData::Bool(true)]).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let _ = p
+            .publish(vec![dbpos(false, false), MmsData::Bool(true)])
+            .await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        closed = !closed;
+    }
+}
+
+/// Bucle «eventos»: disparo/alarma con cadencias variadas + contador — genera
+/// stChange frecuentes con diffs distintos en cada trama.
+#[cfg(any(target_os = "linux", windows))]
+async fn goose_loop_eventos(p: iec61850::goose::PublisherHandle) {
+    let periods = [1u64, 3, 2, 5, 1, 2];
+    let mut trip = false;
+    let mut alarma = false;
+    let mut n: i64 = 0;
+    loop {
+        for (i, secs) in periods.iter().enumerate() {
+            if i % 2 == 0 {
+                trip = !trip;
+            } else {
+                alarma = !alarma;
+            }
+            n += 1;
+            let _ = p
+                .publish(vec![
+                    MmsData::Bool(trip),
+                    MmsData::Bool(alarma),
+                    MmsData::Int(n),
+                ])
+                .await;
+            tokio::time::sleep(Duration::from_secs(*secs)).await;
+        }
+    }
+}
+
+/// Bucle «medida»: un entero en rampa lenta (cambios pequeños y regulares).
+#[cfg(any(target_os = "linux", windows))]
+async fn goose_loop_medida(p: iec61850::goose::PublisherHandle) {
+    let mut v: i64 = 500;
+    let mut up = true;
+    loop {
+        v += if up { 7 } else { -7 };
+        if v > 560 {
+            up = false;
+        } else if v < 440 {
+            up = true;
+        }
+        let _ = p.publish(vec![MmsData::Int(v), MmsData::Bool(false)]).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Publica GOOSE de demo en `iface` según el escenario:
+/// - `maniobra` (defecto): posición Dbpos con selección e intermedio.
+/// - `eventos`: trip/alarma/contador con cadencias variadas.
+/// - `banco`: los dos anteriores + una medida en rampa, cada uno con su
+///   APPID/MAC/gocbRef (llena las estadísticas por publicador).
 #[cfg(any(target_os = "linux", windows))]
 #[tauri::command]
 async fn goose_pub_start(
     state: State<'_, AppState>,
     iface: String,
     simulation: bool,
+    scenario: Option<String>,
 ) -> Result<(), String> {
-    let dst: [u8; 6] = [0x01, 0x0C, 0xCD, 0x01, 0x00, 0x00];
-    let sock = RawSocket::open(&iface, ETHERTYPE_GOOSE, dst)
-        .map_err(|e| format!("abrir socket GOOSE en {iface}: {e} (¿CAP_NET_RAW/root?)"))?;
-    let mut cfg = GooseConfig::new(dst, DEMO_SRC, 0x0001, "DEMO/LLN0$GO$gcbDemo");
-    cfg.dat_set = "DEMO/LLN0$dsDemo".into();
-    cfg.go_id = "DEMO_GOOSE".into();
-    cfg.simulation = simulation; // bit de simulación Ed.2 (pruebas de esquemas)
-    let pubh = GoosePublisher::new(sock, cfg).start();
-    let task = tokio::spawn(async move {
-        let mut on = false;
-        loop {
-            on = !on;
-            let _ = pubh
-                .publish(vec![
-                    MmsData::Bool(on),
-                    MmsData::Int(if on { 1 } else { 0 }),
-                ])
-                .await;
-            tokio::time::sleep(Duration::from_secs(2)).await;
+    let scen = scenario.unwrap_or_else(|| "maniobra".to_string());
+    let task = match scen.as_str() {
+        "eventos" => {
+            let p = goose_demo_pub(&iface, 0x0002, 0x02, "Trip", simulation)?;
+            tokio::spawn(async move { goose_loop_eventos(p).await })
         }
-    });
+        "banco" => {
+            let a = goose_demo_pub(&iface, 0x0001, 0x01, "Pos", simulation)?;
+            let b = goose_demo_pub(&iface, 0x0002, 0x02, "Trip", simulation)?;
+            let c = goose_demo_pub(&iface, 0x0003, 0x03, "Med", simulation)?;
+            // Un solo task con join!: al abortarlo caen los tres bucles.
+            tokio::spawn(async move {
+                tokio::join!(
+                    goose_loop_maniobra(a),
+                    goose_loop_eventos(b),
+                    goose_loop_medida(c)
+                );
+            })
+        }
+        _ => {
+            let p = goose_demo_pub(&iface, 0x0001, 0x01, "Pos", simulation)?;
+            tokio::spawn(async move { goose_loop_maniobra(p).await })
+        }
+    };
     if let Some(old) = state.goose_pub.lock().await.replace(task) {
         old.abort();
     }
@@ -1865,8 +1971,12 @@ async fn goose_pub_start(
 
 #[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
-async fn goose_pub_start(iface: String, simulation: bool) -> Result<(), String> {
-    let _ = (iface, simulation);
+async fn goose_pub_start(
+    iface: String,
+    simulation: bool,
+    scenario: Option<String>,
+) -> Result<(), String> {
+    let _ = (iface, simulation, scenario);
     Err(L2_UNSUPPORTED.into())
 }
 
@@ -1885,6 +1995,7 @@ async fn sv_pub_start(
     state: State<'_, AppState>,
     iface: String,
     simulation: bool,
+    scenario: Option<String>,
 ) -> Result<(), String> {
     let dst: [u8; 6] = [0x01, 0x0C, 0xCD, 0x04, 0x00, 0x00];
     let sock = RawSocket::open(&iface, ETHERTYPE_SV, dst)
@@ -1894,20 +2005,12 @@ async fn sv_pub_start(
     cfg.sample_period = Duration::from_millis(50); // 20/s (en vez de 4000/s) para la demo
     cfg.simulation = simulation; // bit de simulación Ed.2
     let pubh = SvPublisher::new(sock, cfg).start();
+    let scen = scenario.unwrap_or_else(|| "sano".to_string());
     let task = tokio::spawn(async move {
-        let mut t = 0.0f64;
+        let mut k: u64 = 0;
         loop {
-            t += 0.1;
-            let mut n = NineTwoLe::default();
-            n.channels[0] = SvChannel {
-                value: (1000.0 * t.sin()) as i32,
-                quality: 0,
-            };
-            n.channels[3] = SvChannel {
-                value: (1000.0 * (t + 2.094).sin()) as i32,
-                quality: 0,
-            };
-            pubh.set_9_2le(&n);
+            pubh.set_9_2le(&sv_scenario_sample(&scen, k));
+            k += 1;
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     });
@@ -1917,10 +2020,63 @@ async fn sv_pub_start(
     Ok(())
 }
 
+/// Muestra `k` de un sistema trifásico sintético, 80 muestras por ciclo
+/// eléctrico (casa con el valor por defecto de la vista de fasores).
+/// Amplitudes de pico en cuentas 9-2LE: I 1 mA/cuenta (1 A ≙ 1414 de pico),
+/// V 10 mV/cuenta (63,5 V fase-neutro ≙ 8981 de pico). Canales: Ia Ib Ic In
+/// Va Vb Vc Vn; los neutros llevan la suma residual (≈0 en un sistema sano).
+#[cfg(any(target_os = "linux", windows))]
+fn sv_scenario_sample(scenario: &str, k: u64) -> NineTwoLe {
+    use std::f64::consts::PI;
+    let th = 2.0 * PI * (k % 80) as f64 / 80.0;
+    let d = 2.0 * PI / 3.0; // 120°
+    // (Ia, Ib, Ic, Va, Vb, Vc, fracción de 5º armónico en corriente)
+    let (ia, ib, ic, va, vb, vc, h5) = match scenario {
+        // Falta monofásica en A: corriente de falta ×8, tensión hundida al 30 %.
+        "falta" => (11314.0, 1414.0, 1414.0, 2694.0, 8981.0, 8981.0, 0.0),
+        // Carga desequilibrada: amplitudes distintas por fase.
+        "desequilibrio" => (1414.0, 1131.0, 848.0, 8981.0, 8622.0, 8262.0, 0.0),
+        // 5º armónico al 20 % en las corrientes (rectificadores, saturación).
+        "armonicos" => (1414.0, 1414.0, 1414.0, 8981.0, 8981.0, 8981.0, 0.2),
+        // Sistema sano equilibrado.
+        _ => (1414.0, 1414.0, 1414.0, 8981.0, 8981.0, 8981.0, 0.0),
+    };
+    let cur = |amp: f64, ph: f64| amp * (th - ph).sin() + h5 * amp * (5.0 * (th - ph)).sin();
+    let vol = |amp: f64, ph: f64| amp * (th - ph).sin();
+    let i = [cur(ia, 0.0), cur(ib, d), cur(ic, 2.0 * d)];
+    let v = [vol(va, 0.0), vol(vb, d), vol(vc, 2.0 * d)];
+    let mut n = NineTwoLe::default();
+    for (idx, val) in i.iter().enumerate() {
+        n.channels[idx] = SvChannel {
+            value: *val as i32,
+            quality: 0,
+        };
+    }
+    n.channels[3] = SvChannel {
+        value: (i[0] + i[1] + i[2]) as i32,
+        quality: 0,
+    };
+    for (idx, val) in v.iter().enumerate() {
+        n.channels[4 + idx] = SvChannel {
+            value: *val as i32,
+            quality: 0,
+        };
+    }
+    n.channels[7] = SvChannel {
+        value: (v[0] + v[1] + v[2]) as i32,
+        quality: 0,
+    };
+    n
+}
+
 #[cfg(not(any(target_os = "linux", windows)))]
 #[tauri::command]
-async fn sv_pub_start(iface: String, simulation: bool) -> Result<(), String> {
-    let _ = (iface, simulation);
+async fn sv_pub_start(
+    iface: String,
+    simulation: bool,
+    scenario: Option<String>,
+) -> Result<(), String> {
+    let _ = (iface, simulation, scenario);
     Err(L2_UNSUPPORTED.into())
 }
 

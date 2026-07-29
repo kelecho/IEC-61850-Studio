@@ -704,6 +704,9 @@ export default function App() {
   const [capturing, setCapturing] = useState(false);
   // Publicar GOOSE/SV con el bit de simulación de Ed.2 (pruebas de esquemas).
   const [pubSim, setPubSim] = useState(false);
+  // Escenario de tráfico del publicador de demo (QA visual de las vistas).
+  const [gooseScen, setGooseScen] = useState("maniobra");
+  const [svScen, setSvScen] = useState("sano");
   // Modo simulación del suscriptor (LPHD.Sim): solo aceptar tramas SIM.
   const [subSim, setSubSim] = useState(false);
   // Transferencia de ficheros (registros/COMTRADE del IED).
@@ -1718,7 +1721,7 @@ export default function App() {
   async function goosePubStart() {
     if (!iface || !commandMode) return;
     try {
-      await invoke("goose_pub_start", { iface, simulation: pubSim });
+      await invoke("goose_pub_start", { iface, simulation: pubSim, scenario: gooseScen });
       setGoosePubOn(true);
       ok(`publicador GOOSE de demo iniciado${pubSim ? " (simulación)" : ""}`);
     } catch (e) {
@@ -1736,7 +1739,7 @@ export default function App() {
   async function svPubStart() {
     if (!iface || !commandMode) return;
     try {
-      await invoke("sv_pub_start", { iface, simulation: pubSim });
+      await invoke("sv_pub_start", { iface, simulation: pubSim, scenario: svScen });
       setSvPubOn(true);
       ok(`publicador SV de demo iniciado${pubSim ? " (simulación)" : ""}`);
     } catch (e) {
@@ -2969,6 +2972,19 @@ export default function App() {
                   Capturar PCAP
                 </Button>
                 <Divider orientation="vertical" />
+                <Select
+                  size="xs"
+                  w={190}
+                  label="Escenario de demo"
+                  value={gooseScen}
+                  onChange={(v) => setGooseScen(v ?? "maniobra")}
+                  disabled={goosePubOn}
+                  data={[
+                    { value: "maniobra", label: "Maniobra (Dbpos + selección)" },
+                    { value: "eventos", label: "Eventos (trip/alarma)" },
+                    { value: "banco", label: "Banco (3 publicadores)" },
+                  ]}
+                />
                 {goosePubOn ? (
                   <Button size="xs" variant="light" color="red" onClick={goosePubStop}>
                     Detener pub. demo
@@ -3146,6 +3162,20 @@ export default function App() {
                   CSV
                 </Button>
                 <Divider orientation="vertical" />
+                <Select
+                  size="xs"
+                  w={200}
+                  label="Escenario de demo"
+                  value={svScen}
+                  onChange={(v) => setSvScen(v ?? "sano")}
+                  disabled={svPubOn}
+                  data={[
+                    { value: "sano", label: "Trifásico sano" },
+                    { value: "falta", label: "Falta monofásica (fase A)" },
+                    { value: "desequilibrio", label: "Carga desequilibrada" },
+                    { value: "armonicos", label: "5º armónico en corrientes" },
+                  ]}
+                />
                 {svPubOn ? (
                   <Button size="xs" variant="light" color="red" onClick={svPubStop}>
                     Detener pub. demo

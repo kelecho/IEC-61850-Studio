@@ -566,7 +566,10 @@ entradas de las devueltas en esa lectura.</div>
 <p>La sección <b>Bus de estación</b> (sub-pestañas <b>GOOSE</b> y <b>SV</b>) trabaja en la
 <b>capa 2</b> (Ethernet): elija la interfaz de red y pulse <i>Iniciar</i>. Requiere permisos de
 captura (<code>setcap</code> o root; en Windows, Npcap). Publicar tramas de demo exige además
-el modo mando (§4.2).</p>
+el modo mando (§4.2). El publicador de demo trae <b>escenarios</b>: GOOSE (maniobra con Dbpos
+y selección, eventos trip/alarma, banco de 3 publicadores) y SV (trifásico sano, falta
+monofásica, desequilibrio, 5º armónico) — material realista para ejercitar el diff de datos,
+las estadísticas, la forma de onda y los fasores sin IED real.</p>
 <h3>GOOSE</h3>
 <table>
   <tr><th class="mono">GoCbRef</th><th class="mono">MAC dst</th><th>APPID</th><th>stNum</th><th>sqNum</th><th>TTL</th><th>Datos</th></tr>
@@ -648,7 +651,7 @@ fundamental de cada canal (DFT de un bin sobre ciclos completos de la ventana de
   10&nbsp;mV/cuenta), RMS crudo y <b>ángulo relativo</b> a la primera tensión visible — un
   sistema trifásico sano muestra ≈120° entre fases.</li>
   <li><b>Muestras por ciclo</b> configurable: 80 para 9-2LE a 50&nbsp;Hz (4000 muestras/s),
-  96 para 60&nbsp;Hz (4800/s). Con el publicador de demo (~20&nbsp;muestras/s) use ≈63.</li>
+  96 para 60&nbsp;Hz (4800/s). Los escenarios de demo emiten 80 exactas (el valor por defecto ya cuadra).</li>
   <li>Los canales a cero o con solo componente continua se omiten (sin fundamental).</li>
 </ul>
 <div class="note">Las tramas firmadas con IEC&nbsp;62351-6 (HMAC o ECDSA) se verifican si se
@@ -759,7 +762,7 @@ ensayar el flujo completo, incluida la revocación (CRL/OCSP) del lado servidor.
   <tr><td>«Ningún LD declara un SGCB» / sin LCBs</td><td>el modelo no tiene <code>SettingControl</code>/<code>LogControl</code></td>
       <td>normal en muchos IEDs; verifique el SCL de ingeniería</td></tr>
   <tr><td>Fasores con ángulos que giran</td><td>«muestras por ciclo» no coincide con la tasa real</td>
-      <td>ajuste el valor (80 → 50 Hz, 96 → 60 Hz; demo ≈63)</td></tr>
+      <td>ajuste el valor (80 → 50 Hz, 96 → 60 Hz; demo = 80)</td></tr>
   <tr><td>Conmutar grupo → <i>conflicto de estado</i></td><td>grupo fuera de rango (&gt; NumOfSG)</td>
       <td>use un grupo entre 1 y el total mostrado en la tarjeta</td></tr>
 </table>
