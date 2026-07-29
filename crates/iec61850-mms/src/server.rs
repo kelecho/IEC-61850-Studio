@@ -1153,8 +1153,7 @@ impl ServerModel {
     }
 }
 
-/// Construye el itemId de un FCDA (`LN$FC$DO$...$DA`).
-
+/// Convierte un `Value` del store al `MmsData` que dicta el tipo del DA.
 fn value_to_mms(da: &iec61850_model::DataAttribute, v: &Value) -> Option<MmsData> {
     use BasicType::*;
     Some(match da.basic_type {
@@ -1462,8 +1461,7 @@ async fn buffering_task(
         match change_rx.recv().await {
             Ok(change) => {
                 for (key, members) in &brcbs {
-                    let Some(idx) = member_covering(members, &change.domain, &change.item)
-                    else {
+                    let Some(idx) = member_covering(members, &change.domain, &change.item) else {
                         continue;
                     };
                     let member = &members[idx];

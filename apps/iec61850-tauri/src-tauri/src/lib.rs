@@ -2214,10 +2214,6 @@ fn parse_value(kind: &str, text: &str) -> Result<MmsData, String> {
     }
 }
 
-/// Decodifica una calidad (Quality, IEC 61850-7-3): validez + flags de detalle.
-
-/// Convierte un `UtcTime` (4 s epoch + 3 fracción) a segundos epoch con fracción.
-
 /// Formatea un `MmsData` para mostrarlo en el frontend.
 fn fmt_value(v: &MmsData) -> String {
     match v {

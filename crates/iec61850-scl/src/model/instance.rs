@@ -55,6 +55,9 @@ struct RawSdi {
 }
 
 #[derive(Debug, Deserialize)]
+// Los nombres de variante deben coincidir con el elemento XML (deserialización
+// por `$value`): SDI/DAI van en mayúsculas porque así los define el esquema SCL.
+#[allow(clippy::upper_case_acronyms)]
 enum InstanceItem {
     SDI(Box<Sdi>),
     DAI(Box<Dai>),

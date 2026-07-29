@@ -63,7 +63,8 @@ struct Wpcap {
     findalldevs: unsafe extern "C" fn(*mut *mut PcapIf, *mut c_char) -> c_int,
     freealldevs: unsafe extern "C" fn(*mut PcapIf),
     open_live: unsafe extern "C" fn(*const c_char, c_int, c_int, c_int, *mut c_char) -> *mut PcapT,
-    compile: unsafe extern "C" fn(*mut PcapT, *mut BpfProgram, *const c_char, c_int, c_uint) -> c_int,
+    compile:
+        unsafe extern "C" fn(*mut PcapT, *mut BpfProgram, *const c_char, c_int, c_uint) -> c_int,
     setfilter: unsafe extern "C" fn(*mut PcapT, *mut BpfProgram) -> c_int,
     freecode: unsafe extern "C" fn(*mut BpfProgram),
     sendpacket: unsafe extern "C" fn(*mut PcapT, *const u8, c_int) -> c_int,
@@ -190,7 +191,13 @@ impl RawSocket {
         // Promiscuo siempre: los filtros BPF ya limitan lo que se entrega.
         // SAFETY: dev es NUL-terminada y errbuf tiene PCAP_ERRBUF_SIZE octetos.
         let handle = unsafe {
-            (api.open_live)(dev.as_ptr(), 65_535, 1, READ_TIMEOUT_MS, errbuf.as_mut_ptr())
+            (api.open_live)(
+                dev.as_ptr(),
+                65_535,
+                1,
+                READ_TIMEOUT_MS,
+                errbuf.as_mut_ptr(),
+            )
         };
         if handle.is_null() {
             let msg = errbuf_msg(&errbuf);
@@ -201,8 +208,8 @@ impl RawSocket {
             });
         }
         if let Some(f) = filter {
-            let cf = CString::new(f)
-                .map_err(|_| L2Error::Malformed("filtro BPF inválido".into()))?;
+            let cf =
+                CString::new(f).map_err(|_| L2Error::Malformed("filtro BPF inválido".into()))?;
             let mut prog = BpfProgram {
                 bf_len: 0,
                 bf_insns: ptr::null_mut(),
@@ -246,11 +253,8 @@ impl RawSocket {
                         match out_rx.try_recv() {
                             // SAFETY: handle vivo (lo cierra solo este hilo).
                             Ok(frame) => unsafe {
-                                let _ = (api.sendpacket)(
-                                    handle,
-                                    frame.as_ptr(),
-                                    frame.len() as c_int,
-                                );
+                                let _ =
+                                    (api.sendpacket)(handle, frame.as_ptr(), frame.len() as c_int);
                             },
                             Err(std_mpsc::TryRecvError::Empty)
                             | Err(std_mpsc::TryRecvError::Disconnected) => break,
@@ -266,10 +270,9 @@ impl RawSocket {
                         1 => {
                             // SAFETY: con retorno 1, hdr y data apuntan a la
                             // trama capturada, válida hasta la próxima llamada.
-                            let frame = unsafe {
-                                std::slice::from_raw_parts(data, (*hdr).caplen as usize)
-                            }
-                            .to_vec();
+                            let frame =
+                                unsafe { std::slice::from_raw_parts(data, (*hdr).caplen as usize) }
+                                    .to_vec();
                             // Cola llena: se descarta la trama (igual que un
                             // socket con buffer lleno); si está cerrada, salir.
                             if in_tx.try_send(frame).is_err() && in_tx.is_closed() {
